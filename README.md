@@ -1,7 +1,6 @@
 <div align="center">
 
 # DuoBar
-I recreated the iPhone Duo status bar on my MacBook. Here’s the beta version 
 
 ### I recreated the iPhone Duo status bar on my MacBook.
 
@@ -24,7 +23,25 @@ DuoBar recreates the iPhone Duo three-in-one status concept on macOS, mapping re
 
 ## DuoBar on macOS
 
-> A real DuoBar menu-bar screenshot is being prepared. The capture specification is available in [`assets/README.md`](assets/README.md).
+<p align="center">
+  <img src="marketing/screenshots/duobar-hero.png" alt="DuoBar running in the macOS menu bar with its compact status popover open" width="670">
+</p>
+
+The screenshot above is captured from the running app. The compact glyph is one system object—not three menu-bar icons placed side by side.
+
+## Three-in-one, at a glance
+
+<p align="center">
+  <img src="marketing/social/duobar-three-in-one.png" alt="DuoBar's real macOS menu-bar glyph annotated with battery, Wi-Fi, and Bluetooth state" width="800">
+</p>
+
+## Live states
+
+<p align="center">
+  <img src="marketing/social/duobar-states.png" alt="DuoBar menu-bar glyph in full, half, low-battery, and charging states" width="800">
+</p>
+
+[Watch the 15-second real-app demo](marketing/video/duobar-demo.mp4) · [See the charging popover](marketing/screenshots/duobar-charging.png)
 
 ## Features
 

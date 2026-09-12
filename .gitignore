@@ -10,3 +10,7 @@ xcuserdata/
 # do not commit generated binaries to source history.
 release/**/*.app/
 release/**/*.dmg
+
+# Final marketing assets are published with the repository. Raw captures and
+# local generation tooling remain local-only.
+marketing/source/*
