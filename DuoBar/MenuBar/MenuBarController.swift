@@ -1,0 +1,128 @@
+import AppKit
+import SwiftUI
+
+@MainActor
+final class MenuBarController: NSObject {
+    private let statusItem: NSStatusItem
+    private let popover = NSPopover()
+    private let statusStore: SystemStatusStore
+    private var hostingView: PassthroughHostingView<DuoStatusView>?
+    private var lengthAnimationTimer: Timer?
+    private var isInvalidated = false
+
+    init(statusStore: SystemStatusStore) {
+        self.statusStore = statusStore
+        statusItem = NSStatusBar.system.statusItem(withLength: DuoGlyphMetrics.standard.statusItemWidth)
+        super.init()
+        configureStatusItem()
+        configurePopover()
+    }
+
+    private func configureStatusItem() {
+        guard let button = statusItem.button else { return }
+
+        button.target = self
+        button.action = #selector(togglePopover)
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        button.image = nil
+        button.title = ""
+        button.toolTip = "DuoBar system status"
+
+        let rootView = DuoStatusView(statusStore: statusStore) { [weak self] width in
+            self?.setStatusItemLength(width)
+        }
+        let hostingView = PassthroughHostingView(rootView: rootView)
+        hostingView.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(hostingView)
+        NSLayoutConstraint.activate([
+            hostingView.leadingAnchor.constraint(equalTo: button.leadingAnchor),
+            hostingView.trailingAnchor.constraint(equalTo: button.trailingAnchor),
+            hostingView.topAnchor.constraint(equalTo: button.topAnchor),
+            hostingView.bottomAnchor.constraint(equalTo: button.bottomAnchor)
+        ])
+        self.hostingView = hostingView
+    }
+
+    private func configurePopover() {
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentSize = NSSize(width: 296, height: 278)
+        popover.contentViewController = NSHostingController(
+            rootView: StatusPopoverView(statusStore: statusStore) { [weak self] in
+                self?.popover.performClose(nil)
+            }
+        )
+    }
+
+    @objc private func togglePopover() {
+        guard let button = statusItem.button else { return }
+
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.contentViewController?.view.window?.makeKey()
+        }
+    }
+
+    private func setStatusItemLength(_ targetLength: CGFloat) {
+        guard !isInvalidated else { return }
+        lengthAnimationTimer?.invalidate()
+
+        guard UserDefaults.standard.bool(forKey: PreferenceKeys.animationsEnabled) else {
+            statusItem.length = targetLength
+            return
+        }
+
+        let startLength = statusItem.length
+        guard abs(startLength - targetLength) > 0.5 else { return }
+        let startDate = Date()
+        let duration: TimeInterval = 0.34
+
+        let timer = Timer(timeInterval: 1.0 / 60.0, repeats: true) { [weak self] timer in
+            Task { @MainActor in
+                guard let self else {
+                    timer.invalidate()
+                    return
+                }
+
+                let elapsed = Date().timeIntervalSince(startDate)
+                let progress = min(max(elapsed / duration, 0), 1)
+                let eased = 1 - pow(1 - progress, 3)
+                self.statusItem.length = startLength + (targetLength - startLength) * eased
+
+                if progress >= 1 {
+                    self.statusItem.length = targetLength
+                    timer.invalidate()
+                    self.lengthAnimationTimer = nil
+                }
+            }
+        }
+        lengthAnimationTimer = timer
+        RunLoop.main.add(timer, forMode: .common)
+    }
+
+    func invalidate() {
+        guard !isInvalidated else { return }
+        isInvalidated = true
+        lengthAnimationTimer?.invalidate()
+        lengthAnimationTimer = nil
+        popover.performClose(nil)
+        hostingView?.removeFromSuperview()
+        hostingView = nil
+        NSStatusBar.system.removeStatusItem(statusItem)
+    }
+
+    deinit {
+        lengthAnimationTimer?.invalidate()
+        if !isInvalidated {
+            NSStatusBar.system.removeStatusItem(statusItem)
+        }
+    }
+}
+
+private final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        nil
+    }
+}

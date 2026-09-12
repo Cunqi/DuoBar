@@ -1,0 +1,12 @@
+.DS_Store
+DerivedData/
+build/
+*.xcresult
+*.dSYM
+*.xcuserstate
+xcuserdata/
+
+# Upload these from the local release folder as GitHub Release assets;
+# do not commit generated binaries to source history.
+release/**/*.app/
+release/**/*.dmg
