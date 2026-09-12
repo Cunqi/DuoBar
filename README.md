@@ -1,5 +1,5 @@
 # DuoBar
-I recreated the iPhone Duo on my MacBook. Here’s the beta version 
+I recreated the iPhone Duo status bar on my MacBook. Here’s the beta version 
 
 A compact three-in-one system status indicator for macOS.
 
