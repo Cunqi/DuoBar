@@ -4,102 +4,83 @@
 
 ### I recreated the iPhone Duo status bar on my MacBook.
 
-**Battery · Wi-Fi · Bluetooth — unified into one menu bar indicator.**
+**Battery · Network · Volume — unified into one menu-bar indicator.**
 
-[**Download DuoBar 0.1 Beta**](https://github.com/Mikeli7666/DuoBar/releases/tag/v0.1.0-beta)
+[**Download the latest release**](https://github.com/Mikeli7666/DuoBar/releases/latest)
 
-macOS 15+ · Apple Silicon · Open Source
+macOS 15+ · Apple Silicon · Free and Open Source
 
 </div>
 
 ## One glyph, three live states
 
-DuoBar recreates the iPhone Duo three-in-one status concept on macOS, mapping real Mac system state into one compact menu-bar glyph:
+DuoBar adapts the iPhone Duo-style three-in-one status concept for the Mac menu bar. One compact glyph presents the system information normally spread across several indicators:
 
-- **Outer arc** → live battery level
-- **Center Wi-Fi glyph** → live Wi-Fi connection and signal
-- **Four lower dots** → Bluetooth state
-- **Lightning indicator** → charging
+- **Outer arc** → live battery level, with an integrated charging indicator
+- **Center** → the active network: Wi-Fi, Ethernet, or an offline/fallback state
+- **Four lower dots** → live output volume
+
+Persistent status stays monochrome and native-looking. When AirPods or another supported Bluetooth audio output becomes active, the center briefly transitions from Network → AirPods/headphones → Network. Disconnecting does not trigger an animation.
 
 ## DuoBar on macOS
 
-<p align="center">
-  <img src="marketing/screenshots/duobar-hero.png" alt="DuoBar running in the macOS menu bar with its compact status popover open" width="670">
-</p>
-
-The screenshot above is captured from the running app. The compact glyph is one system object—not three menu-bar icons placed side by side.
-
-## Three-in-one, at a glance
-
-<p align="center">
-  <img src="marketing/social/duobar-three-in-one.png" alt="DuoBar's real macOS menu-bar glyph annotated with battery, Wi-Fi, and Bluetooth state" width="800">
-</p>
-
-## Live states
-
-<p align="center">
-  <img src="marketing/social/duobar-states.png" alt="DuoBar menu-bar glyph in full, half, low-battery, and charging states" width="800">
-</p>
-
-[Watch the 15-second real-app demo](marketing/video/duobar-demo.mp4) · [See the charging popover](marketing/screenshots/duobar-charging.png)
+The repository retains the original 0.1 screenshots and videos as project history. Updated 1.0 visuals will be captured from the final validated build; the older annotated artwork is intentionally not shown here because its lower dots represented Bluetooth rather than Volume.
 
 ## Features
 
-- Live battery level
-- Charging state
-- Live Wi-Fi status
-- Bluetooth status
-- Single compact menu-bar glyph
+- Live battery level, low-battery state, and charging state
+- Automatic Wi-Fi, Ethernet, and offline network states
+- Four-dot live volume indicator
+- Compact volume slider and public Core Audio mute control where supported
+- Temporary AirPods/headphones connection presentation
+- Compact custom popover: Network, Volume, Battery, Audio Output, Settings, and Quit
 - Light and Dark Mode
 - Launch at Login
-- Native SwiftUI + AppKit
+- Native Swift, SwiftUI, and AppKit
 - No Dock icon
 
 ## Requirements
 
-<strong>macOS 15.0+</strong><br>
-<strong>Apple Silicon</strong>
+**macOS 15.0+**<br>
+**Apple Silicon**
 
 ## Installation
 
-1. Download `DuoBar-0.1.0-beta.dmg` from the [latest Beta release](https://github.com/Mikeli7666/DuoBar/releases/tag/v0.1.0-beta).
-2. Open the DMG.
-3. Drag DuoBar into Applications.
-4. Open DuoBar from Applications.
+1. Download the current DMG from [GitHub Releases](https://github.com/Mikeli7666/DuoBar/releases).
+2. Open the DMG and drag DuoBar into Applications.
+3. Open DuoBar from Applications.
 
-DuoBar 0.1 Beta is not currently Developer ID signed or notarized. macOS may therefore ask you to explicitly approve the app on first launch. If it is blocked, use Finder's contextual **Open** option where available, or go to **System Settings → Privacy & Security → Open Anyway**.
-
-Do not disable Gatekeeper, System Integrity Protection, or other macOS security protections to install DuoBar.
+DuoBar 1.0 is distributed independently, outside the Mac App Store, and is currently not notarized. If macOS blocks it on first launch, Control-click or right-click DuoBar and choose **Open** where supported, or go to **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper or System Integrity Protection to install DuoBar.
 
 ## Permissions
 
-- **Location:** macOS may require authorization before CoreWLAN can expose the current Wi-Fi network name. If access is denied, Wi-Fi connection and signal information remain available where public APIs permit, while the network name may be unavailable.
-- **Bluetooth:** used to read whether the Mac's Bluetooth controller is available and powered on. If the state cannot be read, DuoBar reports Bluetooth as unavailable and continues running.
+- **Location:** macOS may require authorization before CoreWLAN can expose the current Wi-Fi network name. Denying access does not break basic connection, interface, or signal state; the SSID may simply remain unavailable. DuoBar requests SSID access only when it is useful to the interface.
+- **Bluetooth:** DuoBar retains public Bluetooth controller observation while Core Audio provides the primary source for Bluetooth audio endpoints. The app does not manage or pair devices.
 
-DuoBar requests Wi-Fi network-name access only when its popover is opened and does not repeatedly request permission after the user has made a choice.
+## Audio output behavior
+
+Volume control is available only when the active Core Audio output exposes software-settable public volume properties. HDMI, AirPlay, USB, and other external outputs may instead display **Controlled by device**.
+
+AirPods and Bluetooth audio classification is best-effort using public system metadata. DuoBar does not claim exact AirPods generation detection.
 
 ## Privacy
 
 - System-status processing occurs locally.
-- No analytics or tracking SDKs.
-- No backend.
+- No analytics or tracking.
+- No backend or telemetry.
 - No system-status uploads.
 - No unrelated network requests.
 
 ## Known limitations
 
-- DuoBar 0.1 is Beta software and is not Developer ID signed or notarized.
-- The current Beta supports Apple Silicon Macs only.
 - The Wi-Fi network name may be unavailable without Location permission or when macOS withholds it.
-- Bluetooth support is limited to controller availability and power state; device management and accessory battery levels are not included.
-
-## How to quit
-
-Click the DuoBar glyph, then choose **Quit DuoBar** from the popover. Settings are available from the same popover.
+- Wi-Fi strength uses documented RSSI data and broad signal ranges; it does not reproduce Apple's private icon algorithm.
+- Some audio devices expose fixed or externally controlled volume.
+- Bluetooth audio and AirPods family detection is best-effort through public APIs.
 
 ## Build from source
 
-Open `DuoBar.xcodeproj` in Xcode, select the **DuoBar** scheme, and run. Debug builds include status simulation and glyph-tuning tools; those tools are excluded from Release builds.
+Open `DuoBar.xcodeproj` in Xcode, select the **DuoBar** scheme, and run. Debug builds include status simulation and marketing-capture tools; those tools are excluded from Release behavior.
 
 ## Disclaimer
 

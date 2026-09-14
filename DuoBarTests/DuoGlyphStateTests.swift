@@ -13,21 +13,9 @@ final class DuoGlyphStateTests: XCTestCase {
 
     func testArcKeepsLeftAnchorAndMovesOnlyItsRightEndpoint() {
         let metrics = DuoGlyphMetrics.standard
-        let full = DuoArcShape(
-            startDegrees: metrics.arcStartDegrees,
-            endDegrees: metrics.arcEndDegrees,
-            progress: 1
-        )
-        let half = DuoArcShape(
-            startDegrees: metrics.arcStartDegrees,
-            endDegrees: metrics.arcEndDegrees,
-            progress: 0.5
-        )
-        let empty = DuoArcShape(
-            startDegrees: metrics.arcStartDegrees,
-            endDegrees: metrics.arcEndDegrees,
-            progress: 0
-        )
+        let full = DuoArcShape(startDegrees: metrics.arcStartDegrees, endDegrees: metrics.arcEndDegrees, progress: 1)
+        let half = DuoArcShape(startDegrees: metrics.arcStartDegrees, endDegrees: metrics.arcEndDegrees, progress: 0.5)
+        let empty = DuoArcShape(startDegrees: metrics.arcStartDegrees, endDegrees: metrics.arcEndDegrees, progress: 0)
 
         XCTAssertEqual(full.startDegrees, half.startDegrees)
         XCTAssertEqual(half.startDegrees, empty.startDegrees)
@@ -36,79 +24,87 @@ final class DuoGlyphStateTests: XCTestCase {
         XCTAssertEqual(empty.visibleEndDegrees, metrics.arcStartDegrees, accuracy: 0.0001)
     }
 
-    func testWiFiSignalLevelsUseNormalizedRSSIState() {
-        XCTAssertEqual(wifi(rssi: -42).signalLevel, .strong)
-        XCTAssertEqual(wifi(rssi: -67).signalLevel, .medium)
-        XCTAssertEqual(wifi(rssi: -84).signalLevel, .weak)
-
-        var disconnected = wifi(rssi: nil)
-        disconnected.isConnected = false
-        XCTAssertEqual(disconnected.signalLevel, .disconnected)
-
-        disconnected.isPoweredOn = false
-        XCTAssertEqual(disconnected.signalLevel, .disabled)
+    func testNetworkTransportSelectsCorrectCenterState() {
+        XCTAssertEqual(DuoGlyphState(status: makeStatus(network: wifi(rssi: -42))).centerState, .wifi(.strong))
+        XCTAssertEqual(DuoGlyphState(status: makeStatus(network: wifi(rssi: -84))).centerState, .wifi(.weak))
+        XCTAssertEqual(DuoGlyphState(status: makeStatus(network: ethernet())).centerState, .ethernet)
+        XCTAssertEqual(DuoGlyphState(status: makeStatus(network: offline())).centerState, .offline)
+        XCTAssertEqual(DuoGlyphState(status: makeStatus(network: otherNetwork())).centerState, .other)
     }
 
-    func testBluetoothDotOpacityPreservesAllFourDotStates() {
-        let on = DuoGlyphState(status: makeStatus(bluetooth: BluetoothStatus(isAvailable: true, isPoweredOn: true)))
-        let off = DuoGlyphState(status: makeStatus(bluetooth: BluetoothStatus(isAvailable: true, isPoweredOn: false)))
-        let unavailable = DuoGlyphState(status: makeStatus(bluetooth: .unavailable))
+    func testVolumeLevelDrivesDotsAndBluetoothPowerDoesNot() {
+        let on = DuoGlyphState(status: makeStatus(volume: 0.5, bluetoothPoweredOn: true))
+        let off = DuoGlyphState(status: makeStatus(volume: 0.5, bluetoothPoweredOn: false))
+        let muted = DuoGlyphState(status: makeStatus(volume: 0.9, muted: true))
+        let unknown = DuoGlyphState(status: makeStatus(volume: nil))
 
-        XCTAssertEqual(on.bluetoothDotOpacity, 1)
-        XCTAssertEqual(off.bluetoothDotOpacity, 0.25)
-        XCTAssertEqual(unavailable.bluetoothDotOpacity, 0.14)
+        XCTAssertEqual(on.volumeActiveDotCount, 2)
+        XCTAssertEqual(off.volumeActiveDotCount, 2)
+        XCTAssertEqual(muted.volumeActiveDotCount, 0)
+        XCTAssertNil(unknown.volumeActiveDotCount)
     }
 
-    func testIndependentLayerCombination() {
-        let status = SystemStatus(
-            battery: BatteryStatus(
-                percentage: 25,
-                isCharging: true,
-                isPluggedIn: true,
-                isFullyCharged: false,
-                isAvailable: true
-            ),
-            wifi: wifi(rssi: -42),
-            bluetooth: BluetoothStatus(isAvailable: true, isPoweredOn: true)
+    func testAudioConnectionTemporarilyOverridesNetworkCenter() {
+        let device = AudioDeviceStatus(
+            uid: "airpods",
+            name: "AirPods Pro",
+            transport: .bluetooth,
+            isAlive: true,
+            modelUID: "2027 4c",
+            manufacturer: "Apple Inc.",
+            terminalType: .headphones
+        )
+        let event = StatusEvent(kind: .audioDeviceConnected(device), priority: .informational, duration: 1.8)
+        let state = DuoGlyphState(status: makeStatus(), presentation: .event(event))
+
+        XCTAssertEqual(state.centerState, .airPodsPro)
+        XCTAssertEqual(state.feedback, .audioConnected)
+        XCTAssertEqual(state.audioEventID, event.id)
+    }
+
+    func testSemanticFeedbackIsTemporaryPresentationState() {
+        let normal = DuoGlyphState(status: makeStatus(charging: true))
+        let charging = DuoGlyphState(
+            status: makeStatus(charging: true),
+            presentation: .event(StatusEvent(kind: .charging, priority: .informational))
+        )
+        let low = DuoGlyphState(
+            status: makeStatus(batteryPercentage: 8),
+            presentation: .event(StatusEvent(kind: .lowBattery, priority: .critical))
         )
 
-        let state = DuoGlyphState(status: status)
-        XCTAssertEqual(state.batteryProgress, 0.25)
-        XCTAssertTrue(state.isCharging)
-        XCTAssertEqual(state.wifiLevel, .strong)
-        XCTAssertEqual(state.bluetoothDotOpacity, 1)
+        XCTAssertEqual(normal.feedback, .none)
+        XCTAssertEqual(charging.feedback, .charging)
+        XCTAssertEqual(low.feedback, .lowBattery)
     }
 
     @MainActor
     func testRenderAcceptanceStateGallery() throws {
+        let airPods = AudioDeviceStatus(
+            uid: "airpods",
+            name: "AirPods Pro",
+            transport: .bluetooth,
+            isAlive: true,
+            modelUID: "2027 4c",
+            manufacturer: "Apple Inc.",
+            terminalType: .headphones
+        )
         let scenarios = [
-            PreviewScenario(name: "100%", status: makeStatus(batteryPercentage: 100)),
-            PreviewScenario(name: "75%", status: makeStatus(batteryPercentage: 75)),
-            PreviewScenario(name: "50%", status: makeStatus(batteryPercentage: 50)),
-            PreviewScenario(name: "25%", status: makeStatus(batteryPercentage: 25)),
-            PreviewScenario(name: "10%", status: makeStatus(batteryPercentage: 10)),
+            PreviewScenario(name: "Wi-Fi · 4", status: makeStatus(batteryPercentage: 100, volume: 1)),
+            PreviewScenario(name: "Wi-Fi · 2", status: makeStatus(batteryPercentage: 50, volume: 0.5)),
+            PreviewScenario(name: "Weak · 1", status: makeStatus(batteryPercentage: 25, network: wifi(rssi: -84), volume: 0.1)),
+            PreviewScenario(name: "Ethernet", status: makeStatus(network: ethernet(), volume: 0.76)),
+            PreviewScenario(name: "Offline · mute", status: makeStatus(network: offline(), volume: 0.5, muted: true)),
+            PreviewScenario(name: "Unknown volume", status: makeStatus(volume: nil)),
             PreviewScenario(
-                name: "25% + charge",
-                status: makeStatus(batteryPercentage: 25, charging: true)
+                name: "Charging event",
+                status: makeStatus(batteryPercentage: 60, charging: true),
+                presentation: .event(StatusEvent(kind: .charging, priority: .informational))
             ),
             PreviewScenario(
-                name: "weak + BT off",
-                status: makeStatus(
-                    batteryPercentage: 75,
-                    wifi: wifi(rssi: -84),
-                    bluetooth: BluetoothStatus(isAvailable: true, isPoweredOn: false)
-                )
-            ),
-            PreviewScenario(
-                name: "offline + BT on",
-                status: makeStatus(
-                    batteryPercentage: 100,
-                    wifi: WiFiStatus(isAvailable: true, isPoweredOn: true, isConnected: false, ssid: nil, rssi: nil)
-                )
-            ),
-            PreviewScenario(
-                name: "BT unavailable",
-                status: makeStatus(batteryPercentage: 100, bluetooth: .unavailable)
+                name: "AirPods event",
+                status: makeStatus(),
+                presentation: .event(StatusEvent(kind: .audioDeviceConnected(airPods), priority: .informational))
             )
         ]
 
@@ -117,6 +113,7 @@ final class DuoGlyphStateTests: XCTestCase {
                 VStack(spacing: 8) {
                     DuoGlyphView(
                         status: scenario.status,
+                        presentation: scenario.presentation,
                         metrics: DuoGlyphMetrics.standard.sized(88),
                         animationsEnabled: false
                     )
@@ -124,7 +121,7 @@ final class DuoGlyphStateTests: XCTestCase {
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.white)
                 }
-                .frame(width: 106)
+                .frame(width: 112)
             }
         }
         .padding(20)
@@ -136,19 +133,21 @@ final class DuoGlyphStateTests: XCTestCase {
         let image = try XCTUnwrap(renderer.nsImage)
         let representation = try XCTUnwrap(image.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
         let png = try XCTUnwrap(representation.representation(using: .png, properties: [:]))
-        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("DuoBar-StateGallery.png")
+        let outputURL = FileManager.default.temporaryDirectory.appendingPathComponent("DuoBar-1.0-StateGallery.png")
         try png.write(to: outputURL, options: .atomic)
-
         XCTAssertGreaterThan(png.count, 1_000)
     }
 
     private func makeStatus(
         batteryPercentage: Int = 100,
         charging: Bool = false,
-        wifi: WiFiStatus? = nil,
-        bluetooth: BluetoothStatus = BluetoothStatus(isAvailable: true, isPoweredOn: true)
+        network: NetworkStatus? = nil,
+        volume: Double? = 0.75,
+        muted: Bool = false,
+        bluetoothPoweredOn: Bool = true
     ) -> SystemStatus {
-        SystemStatus(
+        let device = AudioDeviceStatus(uid: "built-in", name: "MacBook Speakers", transport: .builtIn, isAlive: true)
+        return SystemStatus(
             battery: BatteryStatus(
                 percentage: batteryPercentage,
                 isCharging: charging,
@@ -156,25 +155,37 @@ final class DuoGlyphStateTests: XCTestCase {
                 isFullyCharged: false,
                 isAvailable: true
             ),
-            wifi: wifi ?? self.wifi(rssi: -42),
-            bluetooth: bluetooth
+            network: network ?? wifi(rssi: -42),
+            audio: AudioStatus(
+                isAvailable: true,
+                defaultOutput: device,
+                volume: OutputVolumeStatus(level: volume, isMuted: muted, isSettable: volume != nil),
+                connectedBluetoothOutputs: []
+            ),
+            bluetooth: BluetoothStatus(isAvailable: true, isPoweredOn: bluetoothPoweredOn)
         )
     }
 
-    private func wifi(rssi: Int?) -> WiFiStatus {
-        WiFiStatus(
-            isAvailable: true,
-            isPoweredOn: true,
-            isConnected: true,
-            ssid: "Test",
-            rssi: rssi
-        )
+    private func wifi(rssi: Int?) -> NetworkStatus {
+        NetworkStatus(isAvailable: true, isConnected: true, transport: .wifi, interfaceName: "en0", isWiFiPoweredOn: true, ssid: "Test", rssi: rssi)
+    }
+
+    private func ethernet() -> NetworkStatus {
+        NetworkStatus(isAvailable: true, isConnected: true, transport: .ethernet, interfaceName: "en1", isWiFiPoweredOn: true, ssid: nil, rssi: nil)
+    }
+
+    private func offline() -> NetworkStatus {
+        NetworkStatus(isAvailable: true, isConnected: false, transport: .wifi, interfaceName: "en0", isWiFiPoweredOn: true, ssid: nil, rssi: nil)
+    }
+
+    private func otherNetwork() -> NetworkStatus {
+        NetworkStatus(isAvailable: true, isConnected: true, transport: .other, interfaceName: "utun0", isWiFiPoweredOn: true, ssid: nil, rssi: nil)
     }
 }
 
 private struct PreviewScenario: Identifiable {
     let name: String
     let status: SystemStatus
-
+    var presentation: StatusPresentation = .normal
     var id: String { name }
 }

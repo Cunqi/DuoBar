@@ -7,6 +7,7 @@ enum DebugBatteryLevel: Int, CaseIterable, Identifiable {
     case half = 50
     case twentyFive = 25
     case low = 10
+    case critical = 5
 
     var id: Int { rawValue }
     var title: String { "\(rawValue)%" }
@@ -20,28 +21,94 @@ enum DebugPowerState: String, CaseIterable, Identifiable {
     var isCharging: Bool { self == .charging }
 }
 
-enum DebugWiFiState: String, CaseIterable, Identifiable {
+enum DebugNetworkState: String, CaseIterable, Identifiable {
     case strong = "Strong"
     case medium = "Medium"
     case weak = "Weak"
     case disconnected = "Disconnected"
-    case disabled = "Disabled"
+    case wifiDisabled = "Wi-Fi Disabled"
+    case ethernet = "Ethernet"
 
     var id: String { rawValue }
 
-    var status: WiFiStatus {
+    var status: NetworkStatus {
         switch self {
         case .strong:
-            WiFiStatus(isAvailable: true, isPoweredOn: true, isConnected: true, ssid: "Debug Strong", rssi: -42)
+            wifiStatus(ssid: "Debug Strong", rssi: -42)
         case .medium:
-            WiFiStatus(isAvailable: true, isPoweredOn: true, isConnected: true, ssid: "Debug Medium", rssi: -67)
+            wifiStatus(ssid: "Debug Medium", rssi: -72)
         case .weak:
-            WiFiStatus(isAvailable: true, isPoweredOn: true, isConnected: true, ssid: "Debug Weak", rssi: -84)
+            wifiStatus(ssid: "Debug Weak", rssi: -84)
         case .disconnected:
-            WiFiStatus(isAvailable: true, isPoweredOn: true, isConnected: false, ssid: nil, rssi: nil)
-        case .disabled:
-            WiFiStatus(isAvailable: true, isPoweredOn: false, isConnected: false, ssid: nil, rssi: nil)
+            NetworkStatus(isAvailable: true, isConnected: false, transport: .wifi, interfaceName: "en0", isWiFiPoweredOn: true, ssid: nil, rssi: nil)
+        case .wifiDisabled:
+            NetworkStatus(isAvailable: true, isConnected: false, transport: .wifi, interfaceName: "en0", isWiFiPoweredOn: false, ssid: nil, rssi: nil)
+        case .ethernet:
+            NetworkStatus(isAvailable: true, isConnected: true, transport: .ethernet, interfaceName: "en1", isWiFiPoweredOn: true, ssid: nil, rssi: nil)
         }
+    }
+
+    private func wifiStatus(ssid: String, rssi: Int) -> NetworkStatus {
+        NetworkStatus(isAvailable: true, isConnected: true, transport: .wifi, interfaceName: "en0", isWiFiPoweredOn: true, ssid: ssid, rssi: rssi)
+    }
+}
+
+enum DebugVolumeState: String, CaseIterable, Identifiable {
+    case muted = "Muted"
+    case zero = "0%"
+    case ten = "10%"
+    case twentyFive = "25%"
+    case twentySix = "26%"
+    case fifty = "50%"
+    case fiftyOne = "51%"
+    case seventyFive = "75%"
+    case seventySix = "76%"
+    case full = "100%"
+    case controlledByDevice = "Controlled by Device"
+
+    var id: String { rawValue }
+
+    var status: OutputVolumeStatus {
+        switch self {
+        case .muted: OutputVolumeStatus(level: 0.5, isMuted: true, isSettable: true, isMuteSettable: true)
+        case .zero: OutputVolumeStatus(level: 0, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .ten: OutputVolumeStatus(level: 0.1, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .twentyFive: OutputVolumeStatus(level: 0.25, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .twentySix: OutputVolumeStatus(level: 0.26, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .fifty: OutputVolumeStatus(level: 0.5, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .fiftyOne: OutputVolumeStatus(level: 0.51, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .seventyFive: OutputVolumeStatus(level: 0.75, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .seventySix: OutputVolumeStatus(level: 0.76, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .full: OutputVolumeStatus(level: 1, isMuted: false, isSettable: true, isMuteSettable: true)
+        case .controlledByDevice: OutputVolumeStatus(level: 0.5, isMuted: false, isSettable: false)
+        }
+    }
+}
+
+enum DebugAudioDeviceState: String, CaseIterable, Identifiable {
+    case builtIn = "MacBook Speakers"
+    case airPods = "AirPods Pro"
+    case headphones = "Bluetooth Headphones"
+
+    var id: String { rawValue }
+
+    var status: AudioStatus {
+        let transport: AudioDeviceTransport = self == .builtIn ? .builtIn : .bluetooth
+        let device = AudioDeviceStatus(
+            uid: "debug-\(rawValue)",
+            name: rawValue,
+            transport: transport,
+            isAlive: true,
+            modelUID: self == .airPods ? "2027 4c" : nil,
+            manufacturer: self == .airPods ? "Apple Inc." : nil,
+            terminalType: self == .builtIn ? .other(0) : .headphones
+        )
+        return AudioStatus(
+            isAvailable: true,
+            defaultOutput: device,
+            volume: OutputVolumeStatus(level: 0.75, isMuted: false, isSettable: true, isMuteSettable: true),
+            connectedBluetoothOutputs: transport.isBluetooth ? [device] : []
+        )
     }
 }
 

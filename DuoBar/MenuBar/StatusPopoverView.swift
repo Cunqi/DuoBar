@@ -19,26 +19,26 @@ struct StatusPopoverView: View {
                 Spacer()
                 DuoGlyphView(
                     status: statusStore.status,
-                    metrics: DuoGlyphMetrics.standard.sized(19),
+                    metrics: DuoGlyphMetrics.standard.sized(20),
                     animationsEnabled: false
                 )
             }
             .padding(.horizontal, 2)
 
             StatusRow(
-                symbol: wifiSymbol,
-                title: "Wi-Fi",
-                detail: wifiDetail,
-                stateText: wifiState,
-                tint: statusStore.status.wifi.isConnected ? .blue : .orange
+                symbol: networkSymbol,
+                title: "Network",
+                detail: networkDetail,
+                stateText: networkState,
+                tint: .primary
             )
 
-            StatusRow(
-                symbol: "antenna.radiowaves.left.and.right",
-                title: "Bluetooth",
-                detail: bluetoothDetail,
-                stateText: bluetoothState,
-                tint: statusStore.status.bluetooth.isPoweredOn ? .blue : .orange
+            VolumeStatusRow(
+                volume: statusStore.status.audio.volume,
+                hasOutputDevice: statusStore.status.audio.defaultOutput != nil,
+                playbackDeviceIdentifier: statusStore.status.audio.defaultOutput?.uid,
+                onSetVolume: statusStore.setVolume,
+                onSetMuted: statusStore.setMuted
             )
 
             StatusRow(
@@ -46,11 +46,21 @@ struct StatusPopoverView: View {
                 title: "Battery",
                 detail: batteryDetail,
                 stateText: batteryPercentage,
-                tint: batteryTint
+                tint: .primary
+            )
+
+            StatusRow(
+                symbol: audioOutputSymbol,
+                title: "Audio Output",
+                detail: audioOutputDetail,
+                stateText: audioOutputState,
+                tint: .primary
             )
 
             #if DEBUG
-            DebugStatusSimulatorView(statusStore: statusStore)
+            if !MarketingCaptureMode.isEnabled {
+                DebugStatusSimulatorView(statusStore: statusStore)
+            }
             #endif
 
             Divider()
@@ -77,41 +87,48 @@ struct StatusPopoverView: View {
             .padding(.horizontal, 3)
         }
         .padding(12)
-        .frame(width: 296)
+        .frame(width: 304)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
             statusStore.requestWiFiSSIDAccess()
         }
     }
 
-    private var wifiSymbol: String {
-        guard statusStore.status.wifi.isPoweredOn else { return "wifi.slash" }
-        return statusStore.status.wifi.isConnected ? "wifi" : "wifi.exclamationmark"
+    private var networkSymbol: String {
+        let network = statusStore.status.network
+        guard network.isConnected else { return "network.slash" }
+        switch network.transport {
+        case .wifi: return "wifi"
+        case .ethernet: return "cable.connector.horizontal"
+        case .other: return "ellipsis.circle"
+        case .none: return "network.slash"
+        }
     }
 
-    private var wifiDetail: String {
-        let wifi = statusStore.status.wifi
-        if !wifi.isAvailable { return "No Wi-Fi interface" }
-        if !wifi.isPoweredOn { return "Radio disabled" }
-        if !wifi.isConnected { return "Not connected" }
-        return wifi.ssid ?? "Network name unavailable"
+    private var networkDetail: String {
+        let network = statusStore.status.network
+        guard network.isAvailable else { return "No network interface" }
+        guard network.isConnected else {
+            return network.isWiFiPoweredOn == false ? "Wi-Fi disabled" : "Not connected"
+        }
+        switch network.transport {
+        case .wifi: return network.ssid ?? "Network name unavailable"
+        case .ethernet: return network.interfaceName ?? "Wired connection"
+        case .other: return network.interfaceName ?? "Active connection"
+        case .none: return "Not connected"
+        }
     }
 
-    private var wifiState: String {
-        let wifi = statusStore.status.wifi
-        if !wifi.isAvailable { return "Unavailable" }
-        if !wifi.isPoweredOn { return "Off" }
-        return wifi.isConnected ? "Connected" : "Offline"
-    }
-
-    private var bluetoothDetail: String {
-        if !statusStore.status.bluetooth.isAvailable { return "No controller detected" }
-        return statusStore.status.bluetooth.isPoweredOn ? "Controller available" : "Radio disabled"
-    }
-
-    private var bluetoothState: String {
-        guard statusStore.status.bluetooth.isAvailable else { return "Unavailable" }
-        return statusStore.status.bluetooth.isPoweredOn ? "On" : "Off"
+    private var networkState: String {
+        let network = statusStore.status.network
+        guard network.isAvailable else { return "Unavailable" }
+        guard network.isConnected else { return "Offline" }
+        switch network.transport {
+        case .wifi: return "Wi-Fi"
+        case .ethernet: return "Ethernet"
+        case .other: return "Connected"
+        case .none: return "Offline"
+        }
     }
 
     private var batterySymbol: String {
@@ -140,12 +157,32 @@ struct StatusPopoverView: View {
         return statusStore.status.battery.percentage.map { "\($0)%" } ?? "—"
     }
 
-    private var batteryTint: Color {
-        let battery = statusStore.status.battery
-        if battery.isCharging || battery.isFullyCharged { return .green }
-        if (battery.percentage ?? 100) <= 10 { return .red }
-        if (battery.percentage ?? 100) <= 20 { return .orange }
-        return .primary
+    private var audioOutputSymbol: String {
+        guard let output = statusStore.status.audio.defaultOutput else { return "speaker.slash" }
+        if output.transport.isBluetooth {
+            return output.temporaryGlyph == .airPods ? "airpodspro" : "headphones"
+        }
+        return "speaker.wave.2"
+    }
+
+    private var audioOutputDetail: String {
+        statusStore.status.audio.defaultOutput?.name ?? "No output device"
+    }
+
+    private var audioOutputState: String {
+        guard let output = statusStore.status.audio.defaultOutput else { return "Unavailable" }
+        if output.transport.isBluetooth {
+            return output.temporaryGlyph == .airPods ? "AirPods" : "Bluetooth"
+        }
+        switch output.transport {
+        case .builtIn: return "Built-in"
+        case .airPlay: return "AirPlay"
+        case .usb: return "USB"
+        case .hdmi, .displayPort: return "Display"
+        case .virtual: return "Virtual"
+        case .bluetooth, .bluetoothLE: return "Bluetooth"
+        case .other: return "Connected"
+        }
     }
 }
 
@@ -162,36 +199,31 @@ private struct DebugStatusSimulatorView: View {
             Menu("Simulate") {
                 Menu("Battery Level") {
                     ForEach(DebugBatteryLevel.allCases) { level in
-                        Button(level.title) {
-                            statusStore.applyDebugBatteryLevel(level)
-                        }
+                        Button(level.title) { statusStore.applyDebugBatteryLevel(level) }
                     }
                 }
                 Menu("Battery Power") {
                     ForEach(DebugPowerState.allCases) { powerState in
-                        Button(powerState.rawValue) {
-                            statusStore.applyDebugPowerState(powerState)
-                        }
+                        Button(powerState.rawValue) { statusStore.applyDebugPowerState(powerState) }
                     }
                 }
-                Menu("Wi-Fi") {
-                    ForEach(DebugWiFiState.allCases) { wifiState in
-                        Button(wifiState.rawValue) {
-                            statusStore.applyDebugWiFiState(wifiState)
-                        }
+                Menu("Network") {
+                    ForEach(DebugNetworkState.allCases) { networkState in
+                        Button(networkState.rawValue) { statusStore.applyDebugNetworkState(networkState) }
                     }
                 }
-                Menu("Bluetooth") {
-                    ForEach(DebugBluetoothState.allCases) { bluetoothState in
-                        Button(bluetoothState.rawValue) {
-                            statusStore.applyDebugBluetoothState(bluetoothState)
-                        }
+                Menu("Volume") {
+                    ForEach(DebugVolumeState.allCases) { volumeState in
+                        Button(volumeState.rawValue) { statusStore.applyDebugVolumeState(volumeState) }
+                    }
+                }
+                Menu("Audio Connection") {
+                    ForEach(DebugAudioDeviceState.allCases) { deviceState in
+                        Button(deviceState.rawValue) { statusStore.applyDebugAudioDeviceState(deviceState) }
                     }
                 }
                 Divider()
-                Button("Restore Live Data") {
-                    statusStore.restoreLiveStatus()
-                }
+                Button("Restore Live Data") { statusStore.restoreLiveStatus() }
             }
             .menuStyle(.borderlessButton)
             .fixedSize()

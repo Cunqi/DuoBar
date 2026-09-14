@@ -11,11 +11,11 @@ enum StatusPriority: Int, Comparable, Sendable {
 }
 
 struct StatusEvent: Identifiable, Equatable, Sendable {
-    enum Kind: String, Sendable {
+    enum Kind: Equatable, Sendable {
         case charging
-        case wifiDisconnected
-        case bluetoothDisabled
+        case networkDisconnected
         case lowBattery
+        case audioDeviceConnected(AudioDeviceStatus)
     }
 
     let id: UUID
@@ -56,16 +56,10 @@ enum StatusEventDetector {
             events.append(StatusEvent(kind: .charging, priority: .informational))
         }
 
-        if old.wifi.isAvailable,
-           old.wifi.isConnected,
-           !new.wifi.isConnected {
-            events.append(StatusEvent(kind: .wifiDisconnected, priority: .attention))
-        }
-
-        if old.bluetooth.isAvailable,
-           old.bluetooth.isPoweredOn,
-           !new.bluetooth.isPoweredOn {
-            events.append(StatusEvent(kind: .bluetoothDisabled, priority: .attention))
+        if old.network.isAvailable,
+           old.network.isConnected,
+           !new.network.isConnected {
+            events.append(StatusEvent(kind: .networkDisconnected, priority: .attention))
         }
 
         let oldPercentage = old.battery.percentage ?? 101
@@ -77,6 +71,22 @@ enum StatusEventDetector {
             events.append(StatusEvent(kind: .lowBattery, priority: .critical, duration: 3.2))
         }
 
-        return events.sorted { $0.priority > $1.priority }
+        if old.audio.isAvailable {
+            let oldDeviceIDs = Set(old.audio.connectedBluetoothOutputs.map(\.uid))
+            if let connectedDevice = new.audio.connectedBluetoothOutputs.first(where: { !oldDeviceIDs.contains($0.uid) }) {
+                events.append(
+                    StatusEvent(
+                        kind: .audioDeviceConnected(connectedDevice),
+                        priority: .informational,
+                        duration: 1.45
+                    )
+                )
+            }
+        }
+
+        return events.sorted { lhs, rhs in
+            if lhs.priority == rhs.priority { return lhs.duration > rhs.duration }
+            return lhs.priority > rhs.priority
+        }
     }
 }

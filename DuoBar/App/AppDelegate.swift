@@ -9,6 +9,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var menuBarController: MenuBarController?
     private var wakeObserver: NSObjectProtocol?
 
+    #if DEBUG
+    private var marketingCaptureObserver: NSObjectProtocol?
+    private var marketingPopoverObserver: NSObjectProtocol?
+    #endif
+
     override init() {
         isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         UserDefaults.standard.register(defaults: [
@@ -35,7 +40,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         let statusStore = SystemStatusStore()
         self.statusStore = statusStore
-        menuBarController = MenuBarController(statusStore: statusStore)
+
+        #if DEBUG
+        if MarketingCaptureMode.isEnabled {
+            statusStore.applyMarketingCaptureState(MarketingCaptureMode.initialState)
+            marketingCaptureObserver = DistributedNotificationCenter.default().addObserver(
+                forName: MarketingCaptureMode.stateNotification,
+                object: nil,
+                queue: .main
+            ) { [weak statusStore] notification in
+                guard let state = notification.userInfo?["state"] as? String else { return }
+                Task { @MainActor in
+                    statusStore?.applyMarketingCaptureState(state)
+                }
+            }
+        }
+        #endif
+
+        let menuBarController = MenuBarController(statusStore: statusStore)
+        self.menuBarController = menuBarController
+
+        #if DEBUG
+        if MarketingCaptureMode.isEnabled, MarketingCaptureMode.opensPopover {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak menuBarController] in
+                menuBarController?.setPopoverVisibleForMarketingCapture(true)
+            }
+        }
+        if MarketingCaptureMode.isEnabled {
+            marketingPopoverObserver = DistributedNotificationCenter.default().addObserver(
+                forName: MarketingCaptureMode.popoverNotification,
+                object: nil,
+                queue: .main
+            ) { [weak menuBarController] notification in
+                guard let visible = notification.userInfo?["visible"] as? Bool else { return }
+                Task { @MainActor in
+                    menuBarController?.setPopoverVisibleForMarketingCapture(visible)
+                }
+            }
+        }
+        #endif
 
         wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didWakeNotification,
@@ -49,6 +92,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        #if DEBUG
+        if let marketingCaptureObserver {
+            DistributedNotificationCenter.default().removeObserver(marketingCaptureObserver)
+            self.marketingCaptureObserver = nil
+        }
+        if let marketingPopoverObserver {
+            DistributedNotificationCenter.default().removeObserver(marketingPopoverObserver)
+            self.marketingPopoverObserver = nil
+        }
+        #endif
+
         if let wakeObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
             self.wakeObserver = nil

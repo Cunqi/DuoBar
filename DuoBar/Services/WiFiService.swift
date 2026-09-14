@@ -3,8 +3,9 @@
 import Foundation
 
 @MainActor
+@available(*, deprecated, message: "Use NetworkService for active Wi-Fi and Ethernet state")
 final class WiFiService: NSObject, @preconcurrency CLLocationManagerDelegate {
-    var onStatusChange: ((WiFiStatus) -> Void)?
+    var onStatusChange: ((NetworkStatus) -> Void)?
 
     private let client = CWWiFiClient.shared()
     private let locationManager = CLLocationManager()
@@ -48,10 +49,12 @@ final class WiFiService: NSObject, @preconcurrency CLLocationManagerDelegate {
         let isConnected = isPoweredOn && ((ssid?.isEmpty == false) || rssi != nil)
 
         onStatusChange?(
-            WiFiStatus(
+            NetworkStatus(
                 isAvailable: true,
-                isPoweredOn: isPoweredOn,
                 isConnected: isConnected,
+                transport: .wifi,
+                interfaceName: interface.interfaceName,
+                isWiFiPoweredOn: isPoweredOn,
                 ssid: ssid?.isEmpty == false ? ssid : nil,
                 rssi: rssi
             )

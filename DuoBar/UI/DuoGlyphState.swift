@@ -1,13 +1,35 @@
 import Foundation
 
+enum DuoCenterState: Hashable {
+    case wifi(WiFiSignalLevel)
+    case ethernet
+    case offline
+    case other
+    case unavailable
+    case airPodsPro
+    case airPodsMax
+    case airPods
+    case headphones
+    case audioDevice
+}
+
+enum DuoSemanticFeedback: Equatable {
+    case none
+    case charging
+    case lowBattery
+    case audioConnected
+}
+
 struct DuoGlyphState: Equatable {
     let batteryProgress: Double
     let batteryArcOpacity: Double
     let isCharging: Bool
-    let wifiLevel: WiFiSignalLevel
-    let bluetoothDotOpacity: Double
+    let centerState: DuoCenterState
+    let volumeActiveDotCount: Int?
+    let feedback: DuoSemanticFeedback
+    let audioEventID: UUID?
 
-    init(status: SystemStatus) {
+    init(status: SystemStatus, presentation: StatusPresentation = .normal) {
         let battery = status.battery
         if battery.isFullyCharged {
             batteryProgress = 1
@@ -18,15 +40,55 @@ struct DuoGlyphState: Equatable {
         }
         batteryArcOpacity = battery.isAvailable ? 1 : 0.22
         isCharging = battery.isAvailable && battery.isCharging
-        wifiLevel = status.wifi.signalLevel
+        volumeActiveDotCount = status.audio.volume.activeDotCount
 
-        let bluetooth = status.bluetooth
-        if !bluetooth.isAvailable {
-            bluetoothDotOpacity = 0.14
-        } else if bluetooth.isPoweredOn {
-            bluetoothDotOpacity = 1
-        } else {
-            bluetoothDotOpacity = 0.25
+        let normalCenter = Self.networkCenter(for: status.network)
+        guard let event = presentation.event else {
+            centerState = normalCenter
+            feedback = .none
+            audioEventID = nil
+            return
+        }
+
+        switch event.kind {
+        case .audioDeviceConnected(let device):
+            switch device.temporaryConnectionGlyph {
+            case .airPodsPro: centerState = .airPodsPro
+            case .airPodsMax: centerState = .airPodsMax
+            case .airPods: centerState = .airPods
+            case .headphones: centerState = .headphones
+            case .audioDevice: centerState = .audioDevice
+            }
+            feedback = .audioConnected
+            audioEventID = event.id
+        case .charging:
+            centerState = normalCenter
+            feedback = .charging
+            audioEventID = nil
+        case .lowBattery:
+            centerState = normalCenter
+            feedback = .lowBattery
+            audioEventID = nil
+        case .networkDisconnected:
+            centerState = .offline
+            feedback = .none
+            audioEventID = nil
+        }
+    }
+
+    private static func networkCenter(for network: NetworkStatus) -> DuoCenterState {
+        guard network.isAvailable else { return .unavailable }
+        guard network.isConnected else { return .offline }
+
+        switch network.transport {
+        case .wifi:
+            return .wifi(network.wifiSignalLevel)
+        case .ethernet:
+            return .ethernet
+        case .other:
+            return .other
+        case .none:
+            return .offline
         }
     }
 }

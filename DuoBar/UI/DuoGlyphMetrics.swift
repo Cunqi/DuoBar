@@ -2,15 +2,15 @@ import CoreGraphics
 
 struct DuoGlyphMetrics: Equatable {
     static let standard = DuoGlyphMetrics(
-        overallSize: 22,
-        ringDiameter: 26,
-        ringLineWidth: 2.7,
+        overallSize: 24,
+        ringDiameter: 26.5,
+        ringLineWidth: 2.8,
         arcGap: 110,
-        wifiSymbolSize: 11,
-        wifiYOffset: -1.1,
-        dotDiameter: 2.55,
-        dotSpacing: 1.9,
-        dotYOffset: 11.4
+        wifiSymbolSize: 12.4,
+        wifiYOffset: -1.25,
+        dotDiameter: 2.9,
+        dotSpacing: 1.8,
+        dotYOffset: 11.2
     )
 
     static let canvasSize: CGFloat = 32

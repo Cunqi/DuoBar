@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DuoStatusView: View {
     @ObservedObject private var statusStore: SystemStatusStore
+    @ObservedObject private var priorityController: StatusPriorityController
     @AppStorage(PreferenceKeys.animationsEnabled) private var animationsEnabled = true
 
     #if DEBUG
@@ -20,6 +21,7 @@ struct DuoStatusView: View {
 
     init(statusStore: SystemStatusStore, onWidthChange: @escaping (CGFloat) -> Void = { _ in }) {
         self.statusStore = statusStore
+        self.priorityController = statusStore.priorityController
         self.onWidthChange = onWidthChange
     }
 
@@ -34,6 +36,7 @@ struct DuoStatusView: View {
     var body: some View {
         DuoGlyphView(
             status: statusStore.status,
+            presentation: priorityController.presentation,
             metrics: metrics,
             animationsEnabled: animationsEnabled
         )
@@ -47,10 +50,23 @@ struct DuoStatusView: View {
     }
 
     private var accessibilitySummary: String {
-        let wifi = statusStore.status.wifi.isConnected ? "Wi-Fi connected" : "Wi-Fi disconnected"
-        let bluetooth = statusStore.status.bluetooth.isPoweredOn ? "Bluetooth on" : "Bluetooth off"
+        let network: String
+        switch statusStore.status.network.transport {
+        case .ethernet:
+            network = statusStore.status.network.isConnected ? "Ethernet connected" : "Ethernet disconnected"
+        case .wifi:
+            network = statusStore.status.network.isConnected ? "Wi-Fi connected" : "Wi-Fi disconnected"
+        case .other, .none:
+            network = statusStore.status.network.isConnected ? "Network connected" : "Network disconnected"
+        }
+        let volume: String
+        if statusStore.status.audio.volume.isMuted {
+            volume = "volume muted"
+        } else {
+            volume = statusStore.status.audio.volume.percentage.map { "volume \($0) percent" } ?? "volume unavailable"
+        }
         let battery = statusStore.status.battery.percentage.map { "battery \($0) percent" } ?? "battery unavailable"
-        return "\(wifi), \(bluetooth), \(battery)"
+        return "\(network), \(volume), \(battery)"
     }
 
     private var metrics: DuoGlyphMetrics {

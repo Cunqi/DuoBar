@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-DuoBar is currently in beta. Security fixes are provided for the latest public release only.
+DuoBar is supported on its latest stable public release only. Earlier releases do not receive security fixes.
 
 | Version | Supported |
 | --- | --- |
@@ -11,13 +11,13 @@ DuoBar is currently in beta. Security fixes are provided for the latest public r
 
 ## Reporting a Vulnerability
 
-Please do not disclose security vulnerabilities in public GitHub Issues. Prefer GitHub Private Vulnerability Reporting or a private Security Advisory when available for this repository.
+Please do not disclose unresolved security vulnerabilities in public GitHub Issues. Use the repository's **Security → Report a vulnerability** option (GitHub Private Vulnerability Reporting). If that option is unavailable, open an issue containing no vulnerability details and ask the maintainers to arrange a private reporting channel.
 
-Reports will be reviewed as soon as reasonably possible. Please include clear reproduction steps, the affected DuoBar version, the macOS version, and the potential impact when known.
+Reports will be acknowledged and investigated responsibly as soon as reasonably possible. Include the macOS version, DuoBar version, reproduction steps, potential impact, and relevant logs or screenshots with sensitive information removed.
 
 ## Privacy and Data Handling
 
-DuoBar processes battery, Wi-Fi, Bluetooth, and charging state locally. It has no analytics, tracking, backend service, or telemetry, and no system-status data is uploaded.
+DuoBar processes battery, network, volume, Bluetooth audio-device, and charging state locally. It has no analytics, tracking, backend service, or telemetry, and no system-status data is uploaded.
 
 Location permission, when requested, is used only to access Wi-Fi SSID information through macOS APIs.
 

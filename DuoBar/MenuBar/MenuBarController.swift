@@ -44,9 +44,13 @@ final class MenuBarController: NSObject {
     }
 
     private func configurePopover() {
+        #if DEBUG
+        popover.behavior = MarketingCaptureMode.isEnabled ? .applicationDefined : .transient
+        #else
         popover.behavior = .transient
+        #endif
         popover.animates = true
-        popover.contentSize = NSSize(width: 296, height: 278)
+        popover.contentSize = NSSize(width: 304, height: 316)
         popover.contentViewController = NSHostingController(
             rootView: StatusPopoverView(statusStore: statusStore) { [weak self] in
                 self?.popover.performClose(nil)
@@ -64,6 +68,13 @@ final class MenuBarController: NSObject {
             popover.contentViewController?.view.window?.makeKey()
         }
     }
+
+    #if DEBUG
+    func setPopoverVisibleForMarketingCapture(_ visible: Bool) {
+        guard popover.isShown != visible else { return }
+        togglePopover()
+    }
+    #endif
 
     private func setStatusItemLength(_ targetLength: CGFloat) {
         guard !isInvalidated else { return }

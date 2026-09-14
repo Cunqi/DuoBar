@@ -8,18 +8,21 @@ final class SystemStatusStore: ObservableObject {
     let priorityController = StatusPriorityController()
 
     private let batteryService: BatteryService
-    private let wifiService: WiFiService
+    private let networkService: NetworkService
+    private let audioOutputService: AudioOutputService
     private let bluetoothService: BluetoothService
 
     #if DEBUG
     private var debugBatteryOverride: BatteryStatus?
-    private var debugWiFiOverride: WiFiStatus?
+    private var debugNetworkOverride: NetworkStatus?
+    private var debugAudioOverride: AudioStatus?
     private var debugBluetoothOverride: BluetoothStatus?
     #endif
 
     init(startServices: Bool = true) {
         batteryService = BatteryService()
-        wifiService = WiFiService()
+        networkService = NetworkService()
+        audioOutputService = AudioOutputService()
         bluetoothService = BluetoothService()
 
         batteryService.onStatusChange = { [weak self] value in
@@ -30,11 +33,17 @@ final class SystemStatusStore: ObservableObject {
             #endif
             self?.mutate { $0.battery = value }
         }
-        wifiService.onStatusChange = { [weak self] value in
+        networkService.onStatusChange = { [weak self] value in
             #if DEBUG
-            guard self?.debugWiFiOverride == nil else { return }
+            guard self?.debugNetworkOverride == nil else { return }
             #endif
-            self?.mutate { $0.wifi = value }
+            self?.mutate { $0.network = value }
+        }
+        audioOutputService.onStatusChange = { [weak self] value in
+            #if DEBUG
+            guard self?.debugAudioOverride == nil else { return }
+            #endif
+            self?.mutate { $0.audio = value }
         }
         bluetoothService.onStatusChange = { [weak self] value in
             #if DEBUG
@@ -45,19 +54,50 @@ final class SystemStatusStore: ObservableObject {
 
         if startServices {
             batteryService.start()
-            wifiService.start()
+            networkService.start()
+            audioOutputService.start()
             bluetoothService.start()
         }
     }
 
     func refresh() {
         batteryService.refresh()
-        wifiService.refresh()
+        networkService.refresh()
+        audioOutputService.refresh()
         bluetoothService.refresh()
     }
 
     func requestWiFiSSIDAccess() {
-        wifiService.requestSSIDAccess()
+        networkService.requestSSIDAccess()
+    }
+
+    @discardableResult
+    func setVolume(_ level: Double) -> Bool {
+        #if DEBUG
+        if var audio = debugAudioOverride {
+            guard audio.volume.isSettable else { return false }
+            audio.volume.level = min(max(level, 0), 1)
+            audio.volume.isMuted = level == 0
+            debugAudioOverride = audio
+            mutate { $0.audio = audio }
+            return true
+        }
+        #endif
+        return audioOutputService.setVolume(level)
+    }
+
+    @discardableResult
+    func setMuted(_ muted: Bool) -> Bool {
+        #if DEBUG
+        if var audio = debugAudioOverride {
+            guard audio.volume.isMuteSettable else { return false }
+            audio.volume.isMuted = muted
+            debugAudioOverride = audio
+            mutate { $0.audio = audio }
+            return true
+        }
+        #endif
+        return audioOutputService.setMuted(muted)
     }
 
     private func mutate(_ update: (inout SystemStatus) -> Void) {
@@ -98,9 +138,31 @@ final class SystemStatusStore: ObservableObject {
         mutate { $0.battery = battery }
     }
 
-    func applyDebugWiFiState(_ wifiState: DebugWiFiState) {
-        debugWiFiOverride = wifiState.status
-        mutate { $0.wifi = wifiState.status }
+    func applyDebugNetworkState(_ networkState: DebugNetworkState) {
+        debugNetworkOverride = networkState.status
+        mutate { $0.network = networkState.status }
+    }
+
+    func applyDebugVolumeState(_ volumeState: DebugVolumeState) {
+        var audio = debugAudioOverride ?? status.audio
+        audio.isAvailable = true
+        audio.volume = volumeState.status
+        if audio.defaultOutput == nil {
+            audio.defaultOutput = DebugAudioDeviceState.builtIn.status.defaultOutput
+        }
+        debugAudioOverride = audio
+        mutate { $0.audio = audio }
+    }
+
+    func applyDebugAudioDeviceState(_ deviceState: DebugAudioDeviceState) {
+        let audio = deviceState.status
+        if deviceState != .builtIn {
+            let baseline = DebugAudioDeviceState.builtIn.status
+            debugAudioOverride = baseline
+            mutate { $0.audio = baseline }
+        }
+        debugAudioOverride = audio
+        mutate { $0.audio = audio }
     }
 
     func applyDebugBluetoothState(_ bluetoothState: DebugBluetoothState) {
@@ -110,10 +172,80 @@ final class SystemStatusStore: ObservableObject {
 
     func restoreLiveStatus() {
         debugBatteryOverride = nil
-        debugWiFiOverride = nil
+        debugNetworkOverride = nil
+        debugAudioOverride = nil
         debugBluetoothOverride = nil
         priorityController.returnToNormal()
         refresh()
+    }
+
+    func applyMarketingCaptureState(_ identifier: String) {
+        var battery = BatteryStatus(
+            percentage: 75,
+            isCharging: false,
+            isPluggedIn: false,
+            isFullyCharged: false,
+            isAvailable: true
+        )
+        var network = NetworkStatus(
+            isAvailable: true,
+            isConnected: true,
+            transport: .wifi,
+            interfaceName: "en0",
+            isWiFiPoweredOn: true,
+            ssid: "Wi-Fi Network",
+            rssi: -42
+        )
+        let outputDevice = AudioDeviceStatus(
+            uid: "marketing-built-in-output",
+            name: "MacBook Speakers",
+            transport: .builtIn,
+            isAlive: true
+        )
+        var audio = AudioStatus(
+            isAvailable: true,
+            defaultOutput: outputDevice,
+            volume: OutputVolumeStatus(level: 0.75, isMuted: false, isSettable: true, isMuteSettable: true),
+            connectedBluetoothOutputs: []
+        )
+        var bluetooth = BluetoothStatus(isAvailable: true, isPoweredOn: true)
+
+        switch identifier {
+        case "battery100":
+            battery.percentage = 100
+        case "battery50":
+            battery.percentage = 50
+        case "lowBattery":
+            battery.percentage = 8
+        case "charging":
+            battery.percentage = 60
+            battery.isCharging = true
+            battery.isPluggedIn = true
+        case "wifiDisconnected":
+            network.isConnected = false
+            network.ssid = nil
+            network.rssi = nil
+        case "bluetoothOff":
+            bluetooth.isPoweredOn = false
+        case "volumeMuted":
+            audio.volume = OutputVolumeStatus(level: 0, isMuted: true, isSettable: true)
+        case "hero", "bluetoothOn":
+            break
+        default:
+            return
+        }
+
+        debugBatteryOverride = battery
+        debugNetworkOverride = network
+        debugAudioOverride = audio
+        debugBluetoothOverride = bluetooth
+        priorityController.returnToNormal()
+        mutate {
+            $0.battery = battery
+            $0.network = network
+            $0.audio = audio
+            $0.bluetooth = bluetooth
+        }
     }
     #endif
 }
