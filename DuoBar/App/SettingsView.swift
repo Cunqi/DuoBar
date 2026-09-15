@@ -38,6 +38,7 @@ struct SettingsView: View {
 
             #if DEBUG
             if !MarketingCaptureMode.isEnabled {
+                DebugPerformanceDiagnosticsView()
                 DebugDuoGlyphTuningView()
             }
             #endif
@@ -54,7 +55,7 @@ struct SettingsView: View {
 
     private var settingsHeight: CGFloat {
         #if DEBUG
-        MarketingCaptureMode.isEnabled ? 300 : 540
+        MarketingCaptureMode.isEnabled ? 300 : 780
         #else
         300
         #endif
