@@ -14,6 +14,7 @@ struct DuoGlyphMetrics: Equatable {
     )
 
     static let canvasSize: CGFloat = 32
+    static let menuBarVerticalOffset: CGFloat = 1
 
     var overallSize: CGFloat
     var ringDiameter: CGFloat

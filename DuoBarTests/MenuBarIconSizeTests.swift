@@ -37,6 +37,17 @@ final class MenuBarIconSizeTests: XCTestCase {
         XCTAssertEqual(DuoGlyphMetrics.standard.scaled(by: 1).statusItemWidth, 27, accuracy: 0.0001)
     }
 
+    func testProductionWholeGlyphVerticalOffsetIsOnePoint() {
+        XCTAssertEqual(DuoGlyphMetrics.menuBarVerticalOffset, 1, accuracy: 0.0001)
+    }
+
+    func testWholeGlyphVerticalOffsetIsIndependentOfIconScale() {
+        for scale in [0.80, 0.85, 0.90, 0.95, 1.00, 1.05] {
+            _ = DuoGlyphMetrics.standard.scaled(by: scale)
+            XCTAssertEqual(DuoGlyphMetrics.menuBarVerticalOffset, 1, accuracy: 0.0001)
+        }
+    }
+
     func testMinimumScaledMetrics() {
         let metrics = DuoGlyphMetrics.standard.scaled(by: 0.8)
         XCTAssertEqual(metrics.overallSize, 19.2, accuracy: 0.0001)
@@ -95,5 +106,6 @@ final class MenuBarIconSizeTests: XCTestCase {
         XCTAssertEqual(decision.activeMetric, .cpu)
         XCTAssertEqual(decision.normalizedRingValue, 0.72)
         XCTAssertEqual(state, .performance(metric: .cpu, value: 0.72))
+        XCTAssertEqual(DuoGlyphMetrics.menuBarVerticalOffset, 1, accuracy: 0.0001)
     }
 }

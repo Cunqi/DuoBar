@@ -55,6 +55,7 @@ struct DuoStatusView: View {
             usesCustomRingTransition: usesAdaptiveRing,
             ringColorOverride: adaptiveRingColor
         )
+        .offset(y: DuoGlyphMetrics.menuBarVerticalOffset)
         .frame(width: targetWidth, height: 22)
         .contentShape(Rectangle())
         .animation(animation, value: targetWidth)
