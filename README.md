@@ -2,13 +2,17 @@
 
 # DuoBar
 
-### I recreated the iPhone Duo status bar on my MacBook.
+### One compact macOS menu bar indicator for Battery, Network, and Volume.
 
-**Battery · Network · Volume — unified into one menu-bar indicator.**
+**Three live states. One glyph. Less menu bar clutter.**
 
-[**Download the latest release**](https://github.com/Mikeli7666/DuoBar/releases/latest)
+[**Download DuoBar 1.0**](https://github.com/Mikeli7666/DuoBar/releases/latest) · [**Watch the Launch Film**](https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4)
 
-macOS 15+ · Apple Silicon · Free and Open Source
+macOS 15+ · Apple Silicon · Free & Open Source
+
+<br>
+
+<img src="marketing/1.0/launch-film/final/DuoBar-1.0-Launch-Poster.png" alt="DuoBar 1.0" width="820">
 
 </div>
 
@@ -22,9 +26,11 @@ DuoBar adapts the iPhone Duo-style three-in-one status concept for the Mac menu 
 
 Persistent status stays monochrome and native-looking. When AirPods or another supported Bluetooth audio output becomes active, the center briefly transitions from Network → AirPods/headphones → Network. Disconnecting does not trigger an animation.
 
-## DuoBar on macOS
+## DuoBar 1.0
 
-The repository retains the original 0.1 screenshots and videos as project history. Updated 1.0 visuals will be captured from the final validated build; the older annotated artwork is intentionally not shown here because its lower dots represented Bluetooth rather than Volume.
+DuoBar 1.0 redesigns the original beta around Battery, Network, and Volume. It adds Ethernet support, live volume and mute controls, Audio Output selection, and temporary AirPods/headphones connection presentation.
+
+[**Watch the DuoBar 1.0 Official Launch Film →**](https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4)
 
 ## Features
 
@@ -46,11 +52,13 @@ The repository retains the original 0.1 screenshots and videos as project histor
 
 ## Installation
 
-1. Download the current DMG from [GitHub Releases](https://github.com/Mikeli7666/DuoBar/releases).
-2. Open the DMG and drag DuoBar into Applications.
-3. Open DuoBar from Applications.
+1. [**Download the latest DuoBar DMG**](https://github.com/Mikeli7666/DuoBar/releases/latest).
+2. Open the DMG and drag **DuoBar** into **Applications**.
+3. On first launch, Control-click or right-click **DuoBar** in Applications and choose **Open**. If macOS still blocks the app, go to **System Settings → Privacy & Security → Open Anyway**.
 
-DuoBar 1.0 is distributed independently, outside the Mac App Store, and is currently not notarized. If macOS blocks it on first launch, Control-click or right-click DuoBar and choose **Open** where supported, or go to **System Settings → Privacy & Security → Open Anyway**. Never disable Gatekeeper or System Integrity Protection to install DuoBar.
+> **Why is this extra step needed?** DuoBar is currently distributed independently and is not yet Developer ID notarized, so macOS Gatekeeper may ask for explicit approval on first launch. The source code is public, and DuoBar processes system status locally with no analytics, tracking, telemetry, or backend service.
+
+Never disable Gatekeeper or System Integrity Protection to install DuoBar.
 
 ## Permissions
 
