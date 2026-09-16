@@ -9,6 +9,7 @@ struct DuoStatusView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var adaptiveRingOwner = UUID()
     @State private var temporaryPerformanceMetric: PerformanceMetric?
+    @State private var lastPerformanceMetric: PerformanceMetric?
     @State private var adaptiveRingPresentationState = AdaptiveRingPresentationState()
     @State private var adaptiveRingTransition: AdaptiveRingPresentationTransition = .none
 
@@ -57,8 +58,9 @@ struct DuoStatusView: View {
         .contentShape(Rectangle())
         .animation(animation, value: targetWidth)
         .onAppear { onWidthChange(targetWidth) }
-        .onChange(of: targetWidth) { _, newValue in onWidthChange(newValue) }
+        .onChange(of: targetWidth) { newValue in onWidthChange(newValue) }
         .onAppear {
+            lastPerformanceMetric = adaptiveRingMonitor.performanceDecision.activeMetric
             if usesAdaptiveRing {
                 adaptiveRingMonitor.acquire(owner: adaptiveRingOwner)
                 adaptiveRingPresentationState.synchronize(to: adaptiveRingMonitor.state)
@@ -66,8 +68,9 @@ struct DuoStatusView: View {
         }
         .onDisappear { adaptiveRingMonitor.release(owner: adaptiveRingOwner) }
         #if DEBUG
-        .onChange(of: simulateDesktopMac) { _, _ in
+        .onChange(of: simulateDesktopMac) { _ in
             temporaryPerformanceMetric = nil
+            lastPerformanceMetric = adaptiveRingMonitor.performanceDecision.activeMetric
             if usesAdaptiveRing {
                 adaptiveRingMonitor.acquire(owner: adaptiveRingOwner)
                 adaptiveRingPresentationState.synchronize(to: adaptiveRingMonitor.state)
@@ -76,14 +79,16 @@ struct DuoStatusView: View {
             }
         }
         #endif
-        .onChange(of: adaptiveRingMonitor.state) { _, newState in
+        .onChange(of: adaptiveRingMonitor.state) { newState in
             guard usesAdaptiveRing else { return }
             let transition = adaptiveRingPresentationState.retarget(to: newState)
             guard transition.kind != .none else { return }
             adaptiveRingTransition = transition
         }
-        .onChange(of: adaptiveRingMonitor.performanceDecision.activeMetric) { oldMetric, newMetric in
+        .onChange(of: adaptiveRingMonitor.performanceDecision.activeMetric) { newMetric in
             guard usesAdaptiveRing else { return }
+            let oldMetric = lastPerformanceMetric ?? newMetric
+            lastPerformanceMetric = newMetric
             temporaryPerformanceMetric = AdaptiveRingPresentation.metricToIdentify(
                 from: oldMetric,
                 to: newMetric,

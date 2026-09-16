@@ -127,24 +127,24 @@ struct DebugPerformanceDiagnosticsView: View {
             visualLab.reset()
             monitor.release(owner: monitorOwner)
         }
-        .onChange(of: simulateDesktopMac) { _, _ in visualLab.apply(isDesktopSimulationEnabled: simulateDesktopMac) }
-        .onChange(of: visualLab.source) { _, _ in visualLab.apply(isDesktopSimulationEnabled: simulateDesktopMac) }
-        .onChange(of: visualLab.scenario) { _, _ in
+        .onChange(of: simulateDesktopMac) { _ in visualLab.apply(isDesktopSimulationEnabled: simulateDesktopMac) }
+        .onChange(of: visualLab.source) { _ in visualLab.apply(isDesktopSimulationEnabled: simulateDesktopMac) }
+        .onChange(of: visualLab.scenario) { _ in
             guard labBehavior == 0 else { return }
             visualLab.apply(isDesktopSimulationEnabled: simulateDesktopMac)
         }
-        .onChange(of: visualLab.intelligenceScenario) { _, _ in
+        .onChange(of: visualLab.intelligenceScenario) { _ in
             guard labBehavior == 2 else { return }
             visualLab.applyIntelligenceScenario(isDesktopSimulationEnabled: simulateDesktopMac)
         }
-        .onChange(of: visualLab.preference) { _, _ in
+        .onChange(of: visualLab.preference) { _ in
             if labBehavior == 2 {
                 visualLab.applyIntelligenceScenario(isDesktopSimulationEnabled: simulateDesktopMac)
             } else {
                 visualLab.apply(isDesktopSimulationEnabled: simulateDesktopMac)
             }
         }
-        .onChange(of: labBehavior) { _, _ in
+        .onChange(of: labBehavior) { _ in
             visualLab.labUsesIntelligence = labBehavior == 2
             if labBehavior == 2 {
                 visualLab.applyIntelligenceScenario(isDesktopSimulationEnabled: simulateDesktopMac)

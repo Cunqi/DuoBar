@@ -166,7 +166,7 @@ struct DuoCenterTransitionView: View {
             size: size,
             usesSpatialMotion: !reduceMotion
         )
-        .onChange(of: targetState) { _, newState in
+        .onChange(of: targetState) { newState in
             transition(to: newState)
         }
         .task(id: targetState) {

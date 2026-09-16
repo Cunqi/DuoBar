@@ -75,7 +75,7 @@ struct SettingsView: View {
                 adaptiveRingMonitor.setPreference(adaptiveRingPriority.wrappedValue)
             }
         }
-        .onChange(of: adaptiveRingPriorityRaw) { _, _ in
+        .onChange(of: adaptiveRingPriorityRaw) { _ in
             if showsAdaptiveRingSettings {
                 adaptiveRingMonitor.setPreference(adaptiveRingPriority.wrappedValue)
             }

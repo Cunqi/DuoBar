@@ -66,14 +66,7 @@ struct StatusPopoverView: View {
             Divider()
 
             HStack(spacing: 6) {
-                SettingsLink {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .buttonStyle(.plain)
-                .simultaneousGesture(TapGesture().onEnded {
-                    NSApp.activate(ignoringOtherApps: true)
-                    onClose()
-                })
+                settingsAction
 
                 Spacer()
 
@@ -92,6 +85,50 @@ struct StatusPopoverView: View {
             NSApp.activate(ignoringOtherApps: true)
             statusStore.requestWiFiSSIDAccess()
         }
+    }
+
+    @ViewBuilder
+    private var settingsAction: some View {
+        if #available(macOS 14.0, *) {
+            SettingsLink {
+                settingsLabel
+            }
+            .buttonStyle(.plain)
+            .simultaneousGesture(TapGesture().onEnded {
+                NSApp.activate(ignoringOtherApps: true)
+                onClose()
+            })
+        } else {
+            Button(action: openSettingsFromApplicationMenu) {
+                settingsLabel
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private var settingsLabel: some View {
+        Label("Settings", systemImage: "gearshape")
+    }
+
+    private func openSettingsFromApplicationMenu() {
+        NSApp.activate(ignoringOtherApps: true)
+        if let settingsItem = findSettingsMenuItem(in: NSApp.mainMenu), let action = settingsItem.action {
+            NSApp.sendAction(action, to: settingsItem.target, from: settingsItem)
+        }
+        onClose()
+    }
+
+    private func findSettingsMenuItem(in menu: NSMenu?) -> NSMenuItem? {
+        guard let menu else { return nil }
+        for item in menu.items {
+            if item.keyEquivalent == ",", item.keyEquivalentModifierMask.contains(.command) {
+                return item
+            }
+            if let settingsItem = findSettingsMenuItem(in: item.submenu) {
+                return settingsItem
+            }
+        }
+        return nil
     }
 
     private var networkSymbol: String {
