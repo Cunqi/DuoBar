@@ -11,6 +11,9 @@ enum DuoCenterState: Hashable {
     case airPods
     case headphones
     case audioDevice
+    case performanceCPU
+    case performanceMemory
+    case performanceThermal
 }
 
 enum DuoSemanticFeedback: Equatable {
@@ -29,20 +32,27 @@ struct DuoGlyphState: Equatable {
     let feedback: DuoSemanticFeedback
     let audioEventID: UUID?
 
-    init(status: SystemStatus, presentation: StatusPresentation = .normal) {
+    init(
+        status: SystemStatus,
+        presentation: StatusPresentation = .normal,
+        ringProgressOverride: Double? = nil,
+        centerStateOverride: DuoCenterState? = nil
+    ) {
         let battery = status.battery
-        if battery.isFullyCharged {
+        if let ringProgressOverride {
+            batteryProgress = min(max(ringProgressOverride, 0), 1)
+        } else if battery.isFullyCharged {
             batteryProgress = 1
         } else if battery.isAvailable, let percentage = battery.percentage {
             batteryProgress = min(max(Double(percentage) / 100, 0), 1)
         } else {
             batteryProgress = 1
         }
-        batteryArcOpacity = battery.isAvailable ? 1 : 0.22
-        isCharging = battery.isAvailable && battery.isCharging
+        batteryArcOpacity = ringProgressOverride == nil ? (battery.isAvailable ? 1 : 0.22) : 1
+        isCharging = ringProgressOverride == nil && battery.isAvailable && battery.isCharging
         volumeActiveDotCount = status.audio.volume.activeDotCount
 
-        let normalCenter = Self.networkCenter(for: status.network)
+        let normalCenter = centerStateOverride ?? Self.networkCenter(for: status.network)
         guard let event = presentation.event else {
             centerState = normalCenter
             feedback = .none

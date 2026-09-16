@@ -4,7 +4,14 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
     @AppStorage(PreferenceKeys.animationsEnabled) private var animationsEnabled = true
+    @AppStorage(PreferenceKeys.adaptiveRingPriority) private var adaptiveRingPriorityRaw = PerformancePreference.automatic.rawValue
+    @AppStorage(PreferenceKeys.adaptiveRingColorCoding) private var adaptiveRingColorCoding = false
     @StateObject private var launchAtLogin = LaunchAtLoginService()
+    @ObservedObject private var adaptiveRingMonitor = AdaptiveRingMonitor.shared
+    private let deviceContextService = DeviceContextService()
+    #if DEBUG
+    @AppStorage(PreferenceKeys.simulateDesktopMac) private var simulateDesktopMac = false
+    #endif
 
     var body: some View {
         Form {
@@ -36,6 +43,20 @@ struct SettingsView: View {
                 }
             }
 
+            if showsAdaptiveRingSettings {
+                Section("Adaptive Ring") {
+                    Picker("Adaptive Ring Priority", selection: adaptiveRingPriority) {
+                        ForEach(PerformancePreference.allCases, id: \.self) { preference in
+                            Text(preference.rawValue).tag(preference)
+                        }
+                    }
+                    Text("Used only when multiple system conditions need attention. Critical conditions can still take priority.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle("Adaptive Ring Color Coding", isOn: $adaptiveRingColorCoding)
+                }
+            }
+
             #if DEBUG
             if !MarketingCaptureMode.isEnabled {
                 DebugPerformanceDiagnosticsView()
@@ -50,6 +71,14 @@ struct SettingsView: View {
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
             launchAtLogin.refresh()
+            if showsAdaptiveRingSettings {
+                adaptiveRingMonitor.setPreference(adaptiveRingPriority.wrappedValue)
+            }
+        }
+        .onChange(of: adaptiveRingPriorityRaw) { _, _ in
+            if showsAdaptiveRingSettings {
+                adaptiveRingMonitor.setPreference(adaptiveRingPriority.wrappedValue)
+            }
         }
     }
 
@@ -58,6 +87,24 @@ struct SettingsView: View {
         MarketingCaptureMode.isEnabled ? 300 : 780
         #else
         300
+        #endif
+    }
+
+    private var adaptiveRingPriority: Binding<PerformancePreference> {
+        Binding(
+            get: { PerformancePreference(rawValue: adaptiveRingPriorityRaw) ?? .automatic },
+            set: { adaptiveRingPriorityRaw = $0.rawValue }
+        )
+    }
+
+    private var showsAdaptiveRingSettings: Bool {
+        #if DEBUG
+        AdaptiveRingSettingsEligibility.isEligible(
+            for: deviceContextService.current(),
+            simulateDesktop: simulateDesktopMac
+        )
+        #else
+        AdaptiveRingSettingsEligibility.isEligible(for: deviceContextService.current())
         #endif
     }
 }

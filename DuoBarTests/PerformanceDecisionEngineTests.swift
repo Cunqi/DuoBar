@@ -5,7 +5,6 @@ final class PerformanceDecisionEngineTests: XCTestCase {
     private let thresholds = PerformanceDecisionThresholds(
         cpuActivation: 0.55,
         cpuSerious: 0.82,
-        cpuCritical: 0.95,
         activationDuration: 4,
         switchDuration: 5,
         minimumHoldDuration: 8,
@@ -113,6 +112,51 @@ final class PerformanceDecisionEngineTests: XCTestCase {
             thermalState: .nominal
         ))
         XCTAssertEqual(decision.activeMetric, .idle)
+    }
+
+    func testVeryHighCPUIsHighUtilizationNotSystemCritical() {
+        let candidate = PerformanceDecisionEngine(thresholds: thresholds).candidate(for: snapshot(0, cpu: 0.97))
+        XCTAssertEqual(candidate.metric, .cpu)
+        XCTAssertEqual(candidate.severity, .serious)
+        XCTAssertEqual(candidate.severity.semanticLabel, "High")
+    }
+
+    func testMemoryCriticalBeatsHighCPURegardlessOfPreference() {
+        var engine = PerformanceDecisionEngine(thresholds: thresholds, preference: .cpu)
+        let decision = engine.update(with: snapshot(0, cpu: 0.86, memory: .critical))
+        XCTAssertEqual(decision.activeMetric, .memory)
+        XCTAssertTrue(decision.isCriticalOverride)
+        XCTAssertFalse(decision.preferenceAffectedSelection)
+    }
+
+    func testThermalCriticalBeatsHighCPURegardlessOfPreference() {
+        var engine = PerformanceDecisionEngine(thresholds: thresholds, preference: .cpu)
+        let decision = engine.update(with: snapshot(0, cpu: 0.86, thermal: .critical))
+        XCTAssertEqual(decision.activeMetric, .thermal)
+        XCTAssertTrue(decision.isCriticalOverride)
+    }
+
+    func testPreferenceBreaksOnlyCloseCPUAndMemoryTie() {
+        var cpuEngine = PerformanceDecisionEngine(thresholds: thresholds, preference: .cpu)
+        _ = cpuEngine.update(with: snapshot(0, cpu: 0.86, memory: .serious))
+        let cpu = cpuEngine.update(with: snapshot(4, cpu: 0.86, memory: .serious))
+        XCTAssertEqual(cpu.activeMetric, .cpu)
+        XCTAssertTrue(cpu.preferenceAffectedSelection)
+
+        var memoryEngine = PerformanceDecisionEngine(thresholds: thresholds, preference: .memory)
+        _ = memoryEngine.update(with: snapshot(0, cpu: 0.86, memory: .serious))
+        let memory = memoryEngine.update(with: snapshot(4, cpu: 0.86, memory: .serious))
+        XCTAssertEqual(memory.activeMetric, .memory)
+        XCTAssertTrue(memory.preferenceAffectedSelection)
+    }
+
+    func testCloseCompetitionRetainsCurrentMetricWithoutPreference() {
+        var engine = PerformanceDecisionEngine(thresholds: thresholds)
+        _ = engine.update(with: snapshot(0, cpu: 0.86))
+        _ = engine.update(with: snapshot(4, cpu: 0.86))
+        let decision = engine.update(with: snapshot(13, cpu: 0.86, memory: .serious))
+        XCTAssertEqual(decision.activeMetric, .cpu)
+        XCTAssertEqual(decision.reason, .hysteresis)
     }
 
     private func activeCPUEngine() -> PerformanceDecisionEngine {

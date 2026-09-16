@@ -4,6 +4,55 @@ import XCTest
 @testable import DuoBar
 
 final class DuoGlyphStateTests: XCTestCase {
+    func testBatteryRingRemainsDefaultWithoutPerformanceOverride() {
+        let state = DuoGlyphState(status: makeStatus(batteryPercentage: 64, charging: true))
+        XCTAssertEqual(state.batteryProgress, 0.64, accuracy: 0.001)
+        XCTAssertTrue(state.isCharging)
+    }
+
+    func testPerformanceOverrideReusesRingAndSuppressesBatteryChargingState() {
+        let state = DuoGlyphState(
+            status: makeStatus(batteryPercentage: 64, charging: true),
+            ringProgressOverride: 0.82,
+            centerStateOverride: .performanceThermal
+        )
+        XCTAssertEqual(state.batteryProgress, 0.82, accuracy: 0.001)
+        XCTAssertFalse(state.isCharging)
+        XCTAssertEqual(state.centerState, .performanceThermal)
+    }
+
+    func testNeutralAdaptiveRingUsesSingleProgressArcWithoutChangingVolumeOrNetwork() {
+        let state = DuoGlyphState(
+            status: makeStatus(batteryPercentage: 64, charging: true),
+            ringProgressOverride: 0.25
+        )
+        XCTAssertEqual(state.batteryProgress, 0.25)
+        XCTAssertEqual(state.batteryArcOpacity, 1)
+        XCTAssertFalse(state.isCharging)
+        XCTAssertEqual(state.centerState, .wifi(.strong))
+        XCTAssertEqual(state.volumeActiveDotCount, 3)
+    }
+
+    func testPerformanceCenterOverrideDoesNotReplaceHigherPriorityStatusEvent() {
+        let output = AudioDeviceStatus(
+            uid: "test",
+            name: "AirPods Pro",
+            transport: .bluetooth,
+            isAlive: true,
+            modelUID: "2027 4c",
+            manufacturer: "Apple Inc.",
+            terminalType: .headphones
+        )
+        let event = StatusEvent(kind: .audioDeviceConnected(output), priority: .informational)
+        let state = DuoGlyphState(
+            status: makeStatus(),
+            presentation: .event(event),
+            ringProgressOverride: 0.7,
+            centerStateOverride: .performanceCPU
+        )
+        XCTAssertEqual(state.centerState, .airPodsPro)
+    }
+
     func testBatteryLevelsMapLinearlyToArcProgress() {
         for percentage in [100, 75, 50, 25, 10, 0] {
             let state = DuoGlyphState(status: makeStatus(batteryPercentage: percentage))

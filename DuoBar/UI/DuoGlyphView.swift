@@ -5,12 +5,22 @@ struct DuoGlyphView: View {
     var presentation: StatusPresentation = .normal
     var metrics: DuoGlyphMetrics = .standard
     var animationsEnabled = true
+    var ringProgressOverride: Double?
+    var centerStateOverride: DuoCenterState?
+    var ringTransitionAnimation: Animation?
+    var usesCustomRingTransition = false
+    var ringColorOverride: Color?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var centerPulseScale: CGFloat = 1
 
     private var glyphState: DuoGlyphState {
-        DuoGlyphState(status: status, presentation: presentation)
+        DuoGlyphState(
+            status: status,
+            presentation: presentation,
+            ringProgressOverride: ringProgressOverride,
+            centerStateOverride: centerStateOverride
+        )
     }
 
     var body: some View {
@@ -32,7 +42,7 @@ struct DuoGlyphView: View {
             .offset(y: metrics.ringYOffset)
             .opacity(glyphState.batteryArcOpacity)
             .animation(arcAnimation, value: glyphState.batteryProgress)
-            .animation(layerAnimation, value: glyphState.batteryArcOpacity)
+            .animation(arcOpacityAnimation, value: glyphState.batteryArcOpacity)
 
             DuoChargingBolt(
                 isVisible: glyphState.isCharging,
@@ -90,12 +100,18 @@ struct DuoGlyphView: View {
         switch glyphState.feedback {
         case .charging: .green
         case .lowBattery: .red
-        case .none, .audioConnected: .primary
+        case .none, .audioConnected: ringColorOverride ?? .primary
         }
     }
 
     private var arcAnimation: Animation? {
-        motionAllowed ? .easeInOut(duration: 0.32) : nil
+        guard motionAllowed else { return nil }
+        return usesCustomRingTransition ? ringTransitionAnimation : .easeInOut(duration: 0.32)
+    }
+
+    private var arcOpacityAnimation: Animation? {
+        guard motionAllowed else { return nil }
+        return usesCustomRingTransition ? ringTransitionAnimation : layerAnimation
     }
 
     private var layerAnimation: Animation? {
@@ -288,6 +304,9 @@ struct DuoCenterGlyph: View {
         case .airPods: "airpods"
         case .headphones: "headphones"
         case .audioDevice: "speaker.wave.2"
+        case .performanceCPU: "cpu"
+        case .performanceMemory: "memorychip"
+        case .performanceThermal: "thermometer.medium"
         }
     }
 
@@ -298,7 +317,9 @@ struct DuoCenterGlyph: View {
 
     private var symbolSize: CGFloat {
         switch state {
-        case .ethernet, .other, .airPodsPro, .airPodsMax, .airPods, .headphones, .audioDevice: size * 0.92
+        case .ethernet, .other, .airPodsPro, .airPodsMax, .airPods, .headphones, .audioDevice,
+             .performanceCPU, .performanceMemory, .performanceThermal:
+            size * 0.92
         case .wifi, .offline, .unavailable: size
         }
     }
@@ -316,7 +337,9 @@ private extension DuoCenterState {
     var isTemporaryAudioState: Bool {
         switch self {
         case .airPodsPro, .airPodsMax, .airPods, .headphones, .audioDevice: true
-        case .wifi, .ethernet, .offline, .other, .unavailable: false
+        case .wifi, .ethernet, .offline, .other, .unavailable,
+             .performanceCPU, .performanceMemory, .performanceThermal:
+            false
         }
     }
 }

@@ -1,14 +1,14 @@
 import Foundation
 
 struct DeviceContext: Equatable, Sendable {
-    enum PerformanceBehavior: String, Sendable {
+    enum RingBehavior: String, Sendable {
         case batteryRing
-        case performanceRing
+        case adaptiveRing
     }
 
     let hasInternalBattery: Bool
 
-    var performanceBehavior: PerformanceBehavior {
-        hasInternalBattery ? .batteryRing : .performanceRing
+    var ringBehavior: RingBehavior {
+        hasInternalBattery ? .batteryRing : .adaptiveRing
     }
 }

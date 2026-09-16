@@ -38,14 +38,14 @@ final class PerformanceTelemetryTests: XCTestCase {
         let service = DeviceContextService()
         let detected = service.current()
         XCTAssertEqual(
-            detected.performanceBehavior,
-            detected.hasInternalBattery ? .batteryRing : .performanceRing
+            detected.ringBehavior,
+            detected.hasInternalBattery ? .batteryRing : .adaptiveRing
         )
 
         #if DEBUG
         let simulated = service.current(simulateDesktop: true)
         XCTAssertFalse(simulated.hasInternalBattery)
-        XCTAssertEqual(simulated.performanceBehavior, .performanceRing)
+        XCTAssertEqual(simulated.ringBehavior, .adaptiveRing)
         #endif
     }
 
