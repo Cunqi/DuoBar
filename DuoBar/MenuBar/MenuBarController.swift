@@ -12,7 +12,9 @@ final class MenuBarController: NSObject {
 
     init(statusStore: SystemStatusStore) {
         self.statusStore = statusStore
-        statusItem = NSStatusBar.system.statusItem(withLength: DuoGlyphMetrics.standard.statusItemWidth)
+        statusItem = NSStatusBar.system.statusItem(
+            withLength: MenuBarIconSize.statusItemWidth(for: MenuBarIconSize.storedScale())
+        )
         super.init()
         configureStatusItem()
         configurePopover()

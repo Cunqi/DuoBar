@@ -25,15 +25,34 @@ struct DuoGlyphMetrics: Equatable {
     var dotSpacing: CGFloat
     var dotYOffset: CGFloat
 
-    let ringYOffset: CGFloat = -0.8
+    var ringYOffset: CGFloat = -0.8
+    var statusItemHorizontalPadding: CGFloat = 3
 
     var arcStartDegrees: Double { 90 + arcGap / 2 }
     var arcEndDegrees: Double { 450 - arcGap / 2 }
-    var statusItemWidth: CGFloat { overallSize + 3 }
+    var statusItemWidth: CGFloat {
+        max(MenuBarIconSize.minimumStatusItemWidth, overallSize + statusItemHorizontalPadding)
+    }
 
     func sized(_ size: CGFloat) -> DuoGlyphMetrics {
         var copy = self
         copy.overallSize = size
+        return copy
+    }
+
+    func scaled(by rawScale: Double) -> DuoGlyphMetrics {
+        let scale = CGFloat(MenuBarIconSize.resolve(rawScale))
+        var copy = self
+        copy.overallSize *= scale
+        copy.ringDiameter *= scale
+        copy.ringLineWidth *= scale
+        copy.wifiSymbolSize *= scale
+        copy.wifiYOffset *= scale
+        copy.dotDiameter *= scale
+        copy.dotSpacing *= scale
+        copy.dotYOffset *= scale
+        copy.ringYOffset *= scale
+        copy.statusItemHorizontalPadding *= scale
         return copy
     }
 }

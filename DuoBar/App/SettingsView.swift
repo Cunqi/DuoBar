@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
     @AppStorage(PreferenceKeys.animationsEnabled) private var animationsEnabled = true
+    @AppStorage(PreferenceKeys.menuBarIconScale) private var menuBarIconScale = MenuBarIconSize.defaultScale
     @AppStorage(PreferenceKeys.adaptiveRingPriority) private var adaptiveRingPriorityRaw = PerformancePreference.automatic.rawValue
     @AppStorage(PreferenceKeys.adaptiveRingColorCoding) private var adaptiveRingColorCoding = false
     @StateObject private var launchAtLogin = LaunchAtLoginService()
@@ -18,6 +19,28 @@ struct SettingsView: View {
             Section("Menu Bar") {
                 Toggle("Show battery percentage in popover", isOn: $showBatteryPercentage)
                 Toggle("Enable animations", isOn: $animationsEnabled)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Icon Size")
+                    HStack(spacing: 10) {
+                        Text("Small")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Slider(
+                            value: resolvedMenuBarIconScale,
+                            in: MenuBarIconSize.minimumScale...MenuBarIconSize.maximumScale,
+                            step: MenuBarIconSize.step
+                        )
+                        .accessibilityLabel("Menu bar icon size")
+                        .accessibilityValue("\(Int((MenuBarIconSize.resolve(menuBarIconScale) * 100).rounded())) percent")
+                        Text("Large")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Text("Adjust DuoBar to better match your menu bar.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("General") {
@@ -84,9 +107,9 @@ struct SettingsView: View {
 
     private var settingsHeight: CGFloat {
         #if DEBUG
-        MarketingCaptureMode.isEnabled ? 300 : 780
+        MarketingCaptureMode.isEnabled ? 360 : 850
         #else
-        300
+        360
         #endif
     }
 
@@ -94,6 +117,13 @@ struct SettingsView: View {
         Binding(
             get: { PerformancePreference(rawValue: adaptiveRingPriorityRaw) ?? .automatic },
             set: { adaptiveRingPriorityRaw = $0.rawValue }
+        )
+    }
+
+    private var resolvedMenuBarIconScale: Binding<Double> {
+        Binding(
+            get: { MenuBarIconSize.resolve(menuBarIconScale) },
+            set: { menuBarIconScale = MenuBarIconSize.resolve($0) }
         )
     }
 

@@ -1,6 +1,7 @@
 enum PreferenceKeys {
     static let showBatteryPercentage = "showBatteryPercentage"
     static let animationsEnabled = "animationsEnabled"
+    static let menuBarIconScale = MenuBarIconSize.preferenceKey
     static let adaptiveRingPriority = "adaptiveRingPriority"
     static let adaptiveRingColorCoding = "adaptiveRingColorCoding"
 

@@ -18,7 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isRunningTests = ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
         UserDefaults.standard.register(defaults: [
             PreferenceKeys.showBatteryPercentage: true,
-            PreferenceKeys.animationsEnabled: true
+            PreferenceKeys.animationsEnabled: true,
+            PreferenceKeys.menuBarIconScale: MenuBarIconSize.defaultScale
         ])
         super.init()
     }

@@ -5,6 +5,7 @@ struct DuoStatusView: View {
     @ObservedObject private var priorityController: StatusPriorityController
     @ObservedObject private var adaptiveRingMonitor = AdaptiveRingMonitor.shared
     @AppStorage(PreferenceKeys.animationsEnabled) private var animationsEnabled = true
+    @AppStorage(PreferenceKeys.menuBarIconScale) private var menuBarIconScale = MenuBarIconSize.defaultScale
     @AppStorage(PreferenceKeys.adaptiveRingColorCoding) private var adaptiveRingColorCoding = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var adaptiveRingOwner = UUID()
@@ -126,8 +127,9 @@ struct DuoStatusView: View {
     }
 
     private var metrics: DuoGlyphMetrics {
+        let baseMetrics: DuoGlyphMetrics
         #if DEBUG
-        DuoGlyphMetrics(
+        baseMetrics = DuoGlyphMetrics(
             overallSize: CGFloat(overallSize),
             ringDiameter: CGFloat(ringDiameter),
             ringLineWidth: CGFloat(ringLineWidth),
@@ -139,8 +141,9 @@ struct DuoStatusView: View {
             dotYOffset: CGFloat(dotYOffset)
         )
         #else
-        .standard
+        baseMetrics = .standard
         #endif
+        return baseMetrics.scaled(by: menuBarIconScale)
     }
 
     private var adaptiveRingProgress: Double? {
