@@ -30,8 +30,15 @@ Persistent status stays monochrome and native-looking. When AirPods or another s
 
 DuoBar 1.0 redesigns the original beta around Battery, Network, and Volume. It adds Ethernet support, live volume and mute controls, Audio Output selection, and temporary AirPods/headphones connection presentation.
 
-[**Watch the DuoBar 1.0 Official Launch Film →**](https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4)
+<p align="center">
+  <img src="marketing/1.0/DuoBar-1.0-Feature-Overview.png" alt="DuoBar 1.0 feature states: Default, Battery Low, Ethernet, AirPods Connected, and No Connection" width="100%">
+</p>
 
+<p align="center">
+  <a href="https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4">
+    Watch the DuoBar 1.0 Official Launch Film →
+  </a>
+</p>
 ## Features
 
 - Live battery level, low-battery state, and charging state
