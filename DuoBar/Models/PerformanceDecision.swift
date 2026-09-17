@@ -37,6 +37,15 @@ enum PerformancePreference: String, CaseIterable, Sendable {
     var preferredMetric: PerformanceMetric? {
         switch self { case .automatic: nil; case .cpu: .cpu; case .memory: .memory; case .thermal: .thermal }
     }
+
+    var localizedDisplayName: String {
+        switch self {
+        case .automatic: localized("Automatic")
+        case .cpu: localized("Prefer CPU")
+        case .memory: localized("Prefer Memory")
+        case .thermal: localized("Prefer Thermal")
+        }
+    }
 }
 
 enum PerformanceDecisionReason: String, Sendable {

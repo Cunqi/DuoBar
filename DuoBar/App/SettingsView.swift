@@ -17,14 +17,14 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("Menu Bar") {
-                Toggle("Show battery percentage in popover", isOn: $showBatteryPercentage)
-                Toggle("Enable animations", isOn: $animationsEnabled)
+            Section(localized("Menu Bar")) {
+                Toggle(localized("Show battery percentage in popover"), isOn: $showBatteryPercentage)
+                Toggle(localized("Enable animations"), isOn: $animationsEnabled)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Icon Size")
+                    Text(localized("Icon Size"))
                     HStack(spacing: 10) {
-                        Text("Small")
+                        Text(localized("Small"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Slider(
@@ -32,21 +32,21 @@ struct SettingsView: View {
                             in: MenuBarIconSize.minimumScale...MenuBarIconSize.maximumScale,
                             step: MenuBarIconSize.step
                         )
-                        .accessibilityLabel("Menu bar icon size")
-                        .accessibilityValue("\(Int((MenuBarIconSize.resolve(menuBarIconScale) * 100).rounded())) percent")
-                        Text("Large")
+                        .accessibilityLabel(localized("Menu bar icon size"))
+                        .accessibilityValue(localized("%d%%", Int((MenuBarIconSize.resolve(menuBarIconScale) * 100).rounded())))
+                        Text(localized("Large"))
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    Text("Adjust DuoBar to better match your menu bar.")
+                    Text(localized("Adjust DuoBar to better match your menu bar."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
-            Section("General") {
+            Section(localized("General")) {
                 Toggle(
-                    "Launch DuoBar at login",
+                    localized("Launch DuoBar at login"),
                     isOn: Binding(
                         get: { launchAtLogin.isEnabled },
                         set: launchAtLogin.setEnabled
@@ -54,7 +54,7 @@ struct SettingsView: View {
                 )
 
                 if launchAtLogin.requiresApproval {
-                    Text("Approval is required in System Settings → General → Login Items.")
+                    Text(localized("Approval is required in System Settings → General → Login Items."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -68,22 +68,22 @@ struct SettingsView: View {
             }
 
             if showsBatteryRingSettings {
-                Section("Battery Ring") {
-                    Toggle("Battery Color Coding", isOn: $batteryColorCoding)
+                Section(localized("Battery Ring")) {
+                    Toggle(localized("Battery Color Coding"), isOn: $batteryColorCoding)
                 }
             }
 
             if showsAdaptiveRingSettings {
-                Section("Adaptive Ring") {
-                    Picker("Adaptive Ring Priority", selection: adaptiveRingPriority) {
+                Section(localized("Adaptive Ring")) {
+                    Picker(localized("Adaptive Ring Priority"), selection: adaptiveRingPriority) {
                         ForEach(PerformancePreference.allCases, id: \.self) { preference in
-                            Text(preference.rawValue).tag(preference)
+                            Text(preference.localizedDisplayName).tag(preference)
                         }
                     }
-                    Text("Used only when multiple system conditions need attention. Critical conditions can still take priority.")
+                    Text(localized("Used only when multiple system conditions need attention. Critical conditions can still take priority."))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Toggle("Adaptive Ring Color Coding", isOn: $adaptiveRingColorCoding)
+                    Toggle(localized("Adaptive Ring Color Coding"), isOn: $adaptiveRingColorCoding)
                 }
             }
 
@@ -97,7 +97,7 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .scenePadding()
         .frame(width: 420, height: settingsHeight)
-        .navigationTitle("DuoBar Settings")
+        .navigationTitle(localized("DuoBar Settings"))
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
             launchAtLogin.refresh()

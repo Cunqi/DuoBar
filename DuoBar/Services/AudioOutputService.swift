@@ -218,7 +218,7 @@ final class AudioOutputService {
         let name = readString(
             objectID: deviceID,
             selector: kAudioObjectPropertyName
-        ) ?? "Audio Device"
+        ) ?? localized("Audio Device")
         let uid = readString(
             objectID: deviceID,
             selector: kAudioDevicePropertyDeviceUID

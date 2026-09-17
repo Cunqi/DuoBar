@@ -17,7 +17,7 @@ struct VolumeStatusRow: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
-                    Text("Volume")
+                    Text(localized("Volume"))
                         .font(.system(size: 12.5, weight: .semibold))
                     Spacer()
                     Text(stateText)
@@ -36,10 +36,10 @@ struct VolumeStatusRow: View {
                         onEditingChanged: handleSliderEditingChanged
                     )
                     .controlSize(.mini)
-                    .accessibilityLabel("Output volume")
+                    .accessibilityLabel(localized("Output volume"))
                     .accessibilityValue(stateText)
                 } else {
-                    Text(hasOutputDevice ? "Controlled by device" : "Volume unavailable")
+                    Text(hasOutputDevice ? localized("Controlled by device") : localized("Volume unavailable"))
                         .font(.system(size: 10.5))
                         .foregroundStyle(.secondary)
                 }
@@ -62,8 +62,8 @@ struct VolumeStatusRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .help(volume.isMuted ? "Unmute" : "Mute")
-            .accessibilityLabel(volume.isMuted ? "Unmute output" : "Mute output")
+            .help(volume.isMuted ? localized("Unmute") : localized("Mute"))
+            .accessibilityLabel(volume.isMuted ? localized("Unmute output") : localized("Mute output"))
         } else {
             Image(systemName: volumeSymbol)
                 .font(.system(size: 13, weight: .semibold))
@@ -81,8 +81,8 @@ struct VolumeStatusRow: View {
     }
 
     private var stateText: String {
-        if volume.isMuted { return "Muted" }
-        return volume.percentage.map { "\($0)%" } ?? "—"
+        if volume.isMuted { return localized("Muted") }
+        return volume.percentage.map { localized("%d%%", $0) } ?? "—"
     }
 
     private func handleUserVolumeChange(_ level: Double) {

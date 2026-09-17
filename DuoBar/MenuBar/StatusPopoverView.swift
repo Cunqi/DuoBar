@@ -29,7 +29,7 @@ struct StatusPopoverView: View {
 
             StatusRow(
                 symbol: networkSymbol,
-                title: "Network",
+                title: localized("Network"),
                 detail: networkDetail,
                 stateText: networkState,
                 tint: .primary
@@ -45,7 +45,7 @@ struct StatusPopoverView: View {
 
             StatusRow(
                 symbol: batterySymbol,
-                title: "Battery",
+                title: localized("Battery"),
                 detail: batteryDetail,
                 stateText: batteryPercentage,
                 tint: .primary
@@ -53,7 +53,7 @@ struct StatusPopoverView: View {
 
             StatusRow(
                 symbol: audioOutputSymbol,
-                title: "Audio Output",
+                title: localized("Audio Output"),
                 detail: audioOutputDetail,
                 stateText: audioOutputState,
                 tint: .primary
@@ -72,7 +72,7 @@ struct StatusPopoverView: View {
 
                 Spacer()
 
-                Button("Quit DuoBar") {
+                Button(localized("Quit DuoBar")) {
                     NSApp.terminate(nil)
                 }
                 .buttonStyle(.plain)
@@ -109,7 +109,7 @@ struct StatusPopoverView: View {
     }
 
     private var settingsLabel: some View {
-        Label("Settings", systemImage: "gearshape")
+        Label(localized("Settings"), systemImage: "gearshape")
     }
 
     private func openSettingsFromApplicationMenu() {
@@ -146,27 +146,27 @@ struct StatusPopoverView: View {
 
     private var networkDetail: String {
         let network = statusStore.status.network
-        guard network.isAvailable else { return "No network interface" }
+        guard network.isAvailable else { return localized("No network interface") }
         guard network.isConnected else {
-            return network.isWiFiPoweredOn == false ? "Wi-Fi disabled" : "Not connected"
+            return network.isWiFiPoweredOn == false ? localized("Wi-Fi disabled") : localized("Not connected")
         }
         switch network.transport {
-        case .wifi: return network.ssid ?? "Network name unavailable"
-        case .ethernet: return network.interfaceName ?? "Wired connection"
-        case .other: return network.interfaceName ?? "Active connection"
-        case .none: return "Not connected"
+        case .wifi: return network.ssid ?? localized("Network name unavailable")
+        case .ethernet: return network.interfaceName ?? localized("Wired connection")
+        case .other: return network.interfaceName ?? localized("Active connection")
+        case .none: return localized("Not connected")
         }
     }
 
     private var networkState: String {
         let network = statusStore.status.network
-        guard network.isAvailable else { return "Unavailable" }
-        guard network.isConnected else { return "Offline" }
+        guard network.isAvailable else { return localized("Unavailable") }
+        guard network.isConnected else { return localized("Offline") }
         switch network.transport {
-        case .wifi: return "Wi-Fi"
-        case .ethernet: return "Ethernet"
-        case .other: return "Connected"
-        case .none: return "Offline"
+        case .wifi: return localized("Wi-Fi")
+        case .ethernet: return localized("Ethernet")
+        case .other: return localized("Connected")
+        case .none: return localized("Offline")
         }
     }
 
@@ -184,17 +184,17 @@ struct StatusPopoverView: View {
 
     private var batteryDetail: String {
         let battery = statusStore.status.battery
-        if !battery.isAvailable { return "No internal battery" }
-        if battery.isFullyCharged { return "Fully charged" }
-        if battery.isCharging { return "Charging" }
-        if battery.isLowPowerModeEnabled { return "Low Power Mode" }
-        if battery.isPluggedIn { return "Power adapter connected" }
-        return "Using battery power"
+        if !battery.isAvailable { return localized("No internal battery") }
+        if battery.isFullyCharged { return localized("Fully charged") }
+        if battery.isCharging { return localized("Charging") }
+        if battery.isLowPowerModeEnabled { return localized("Low Power Mode") }
+        if battery.isPluggedIn { return localized("Power adapter connected") }
+        return localized("Using battery power")
     }
 
     private var batteryPercentage: String {
         guard showBatteryPercentage else { return "—" }
-        return statusStore.status.battery.percentage.map { "\($0)%" } ?? "—"
+        return statusStore.status.battery.percentage.map { localized("%d%%", $0) } ?? "—"
     }
 
     private var audioOutputSymbol: String {
@@ -206,22 +206,22 @@ struct StatusPopoverView: View {
     }
 
     private var audioOutputDetail: String {
-        statusStore.status.audio.defaultOutput?.name ?? "No output device"
+        statusStore.status.audio.defaultOutput?.name ?? localized("No output device")
     }
 
     private var audioOutputState: String {
-        guard let output = statusStore.status.audio.defaultOutput else { return "Unavailable" }
+        guard let output = statusStore.status.audio.defaultOutput else { return localized("Unavailable") }
         if output.transport.isBluetooth {
-            return output.temporaryGlyph == .airPods ? "AirPods" : "Bluetooth"
+            return output.temporaryGlyph == .airPods ? localized("AirPods") : localized("Bluetooth")
         }
         switch output.transport {
-        case .builtIn: return "Built-in"
-        case .airPlay: return "AirPlay"
-        case .usb: return "USB"
-        case .hdmi, .displayPort: return "Display"
-        case .virtual: return "Virtual"
-        case .bluetooth, .bluetoothLE: return "Bluetooth"
-        case .other: return "Connected"
+        case .builtIn: return localized("Built-in")
+        case .airPlay: return localized("AirPlay")
+        case .usb: return localized("USB")
+        case .hdmi, .displayPort: return localized("Display")
+        case .virtual: return localized("Virtual")
+        case .bluetooth, .bluetoothLE: return localized("Bluetooth")
+        case .other: return localized("Connected")
         }
     }
 }
