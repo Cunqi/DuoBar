@@ -2,13 +2,17 @@
 
 # DuoBar
 
-### I recreated the iPhone Duo status bar on my MacBook.
+### One compact macOS menu bar indicator for Battery, Network, and Volume.
 
-**Battery · Network · Volume — unified into one menu-bar indicator.**
+**Three live states. One glyph. Less menu bar clutter.**
 
-[**Download the latest release**](https://github.com/Mikeli7666/DuoBar/releases/latest)
+[**Download DuoBar 1.1**](https://github.com/Mikeli7666/DuoBar/releases/latest) · [**Watch the Launch Film**](https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4)
 
 macOS 13+ · Apple Silicon or Intel · Universal 2 · Free and Open Source
+
+<br>
+
+<img src="marketing/1.0/launch-film/final/DuoBar-1.0-Launch-Poster.png" alt="DuoBar 1.0" width="820">
 
 </div>
 
@@ -28,8 +32,17 @@ On MacBooks, the outer Battery Ring shows live battery level, a dynamic charging
 
 ## DuoBar on macOS
 
-The repository retains the original 0.1 screenshots and videos as project history. Updated 1.0 visuals will be captured from the final validated build; the older annotated artwork is intentionally not shown here because its lower dots represented Bluetooth rather than Volume.
+DuoBar 1.0 redesigns the original beta around Battery, Network, and Volume. It adds Ethernet support, live volume and mute controls, Audio Output selection, and temporary AirPods/headphones connection presentation.
 
+<p align="center">
+  <img src="marketing/1.0/DuoBar-1.0-Feature-Overview.png" alt="DuoBar 1.0 feature states: Default, Battery Low, Ethernet, AirPods Connected, and No Connection" width="100%">
+</p>
+
+<p align="center">
+  <a href="https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4">
+    Watch the DuoBar 1.0 Official Launch Film →
+  </a>
+</p>
 ## Features
 
 - Battery Ring with live level, dynamic charging bolt, low-battery state, and optional Battery Color Coding
