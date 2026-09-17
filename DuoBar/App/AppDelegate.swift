@@ -19,7 +19,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         UserDefaults.standard.register(defaults: [
             PreferenceKeys.showBatteryPercentage: true,
             PreferenceKeys.animationsEnabled: true,
-            PreferenceKeys.menuBarIconScale: MenuBarIconSize.defaultScale
+            PreferenceKeys.menuBarIconScale: MenuBarIconSize.defaultScale,
+            PreferenceKeys.batteryColorCoding: false
         ])
         super.init()
     }

@@ -1,4 +1,13 @@
+import AppKit
 import SwiftUI
+
+enum BatteryBoltPresentationConstants {
+    static let sizeScale: CGFloat = 1.45
+    static let opacity = 0.85
+    static let sizeMultiplier: CGFloat = 2.15
+    static let minimumSize: CGFloat = 5.2
+    static let radialOffset: CGFloat = -0.5
+}
 
 struct DuoGlyphView: View {
     let status: SystemStatus
@@ -10,6 +19,7 @@ struct DuoGlyphView: View {
     var ringTransitionAnimation: Animation?
     var usesCustomRingTransition = false
     var ringColorOverride: Color?
+    var batteryColorCodingEnabled = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var centerPulseScale: CGFloat = 1
@@ -19,7 +29,8 @@ struct DuoGlyphView: View {
             status: status,
             presentation: presentation,
             ringProgressOverride: ringProgressOverride,
-            centerStateOverride: centerStateOverride
+            centerStateOverride: centerStateOverride,
+            batteryColorCodingEnabled: batteryColorCodingEnabled
         )
     }
 
@@ -45,10 +56,11 @@ struct DuoGlyphView: View {
             .animation(arcOpacityAnimation, value: glyphState.batteryArcOpacity)
 
             DuoChargingBolt(
-                isVisible: glyphState.isCharging,
-                size: max(metrics.ringLineWidth * 2.15, 5.2),
+                isVisible: glyphState.batteryPresentation.boltPlacement != .none,
+                size: chargingBoltSize,
                 offset: chargingBoltOffset,
                 color: arcColor,
+                opacity: chargingBoltOpacity,
                 animationsEnabled: motionAllowed
             )
 
@@ -97,10 +109,20 @@ struct DuoGlyphView: View {
     }
 
     private var arcColor: Color {
+        if ringProgressOverride != nil {
+            return ringColorOverride ?? .primary
+        }
+
+        switch glyphState.batteryPresentation.colorRole {
+        case .charging: return Color(nsColor: .systemGreen)
+        case .lowPowerMode: return Color(nsColor: .systemYellow)
+        case .lowBattery: return Color(nsColor: .systemRed)
+        case .monochrome: break
+        }
+
         switch glyphState.feedback {
-        case .charging: .green
-        case .lowBattery: .red
-        case .none, .audioConnected: ringColorOverride ?? .primary
+        case .charging, .lowBattery: return .primary
+        case .none, .audioConnected: return ringColorOverride ?? .primary
         }
     }
 
@@ -119,15 +141,70 @@ struct DuoGlyphView: View {
     }
 
     private var chargingBoltOffset: CGSize {
-        let progress = min(max(glyphState.batteryProgress, 0.04), 0.72)
-        let sweep = metrics.arcEndDegrees - metrics.arcStartDegrees
-        let degrees = metrics.arcStartDegrees + sweep * progress
-        let radians = degrees * .pi / 180
-        let radius = metrics.ringDiameter / 2
+        let point: CGPoint
+        switch glyphState.batteryPresentation.boltPlacement {
+        case .ringEndpoint:
+            point = DuoRingGeometry.endpoint(
+                metrics: metrics,
+                progress: glyphState.batteryProgress,
+                radialOffset: chargingBoltRadialOffset
+            )
+        case .ringMidpoint:
+            point = DuoRingGeometry.midpoint(
+                metrics: metrics,
+                radialOffset: chargingBoltRadialOffset
+            )
+        case .none:
+            point = .zero
+        }
         return CGSize(
-            width: CGFloat(cos(radians)) * radius,
-            height: CGFloat(sin(radians)) * radius + metrics.ringYOffset
+            width: point.x,
+            height: point.y
         )
+    }
+
+    private var chargingBoltSize: CGFloat {
+        max(
+            metrics.ringLineWidth * BatteryBoltPresentationConstants.sizeMultiplier,
+            BatteryBoltPresentationConstants.minimumSize
+        ) * BatteryBoltPresentationConstants.sizeScale
+    }
+
+    private var chargingBoltOpacity: Double {
+        BatteryBoltPresentationConstants.opacity
+    }
+
+    private var chargingBoltRadialOffset: CGFloat {
+        BatteryBoltPresentationConstants.radialOffset
+    }
+}
+
+enum DuoRingGeometry {
+    static func endDegrees(startDegrees: Double, endDegrees: Double, progress: Double) -> Double {
+        let clampedProgress = min(max(progress, 0), 1)
+        return startDegrees + (endDegrees - startDegrees) * clampedProgress
+    }
+
+    static func endpoint(
+        metrics: DuoGlyphMetrics,
+        progress: Double,
+        radialOffset: CGFloat = 0
+    ) -> CGPoint {
+        let degrees = endDegrees(
+            startDegrees: metrics.arcStartDegrees,
+            endDegrees: metrics.arcEndDegrees,
+            progress: progress
+        )
+        let radians = degrees * .pi / 180
+        let radius = metrics.ringDiameter / 2 + radialOffset
+        return CGPoint(
+            x: CGFloat(cos(radians)) * radius,
+            y: CGFloat(sin(radians)) * radius + metrics.ringYOffset
+        )
+    }
+
+    static func midpoint(metrics: DuoGlyphMetrics, radialOffset: CGFloat = 0) -> CGPoint {
+        endpoint(metrics: metrics, progress: 0.5, radialOffset: radialOffset)
     }
 }
 
@@ -247,8 +324,11 @@ struct DuoArcShape: Shape {
     }
 
     var visibleEndDegrees: Double {
-        let clampedProgress = min(max(progress, 0), 1)
-        return startDegrees + (endDegrees - startDegrees) * Double(clampedProgress)
+        DuoRingGeometry.endDegrees(
+            startDegrees: startDegrees,
+            endDegrees: endDegrees,
+            progress: Double(progress)
+        )
     }
 
     func path(in rect: CGRect) -> Path {
@@ -373,6 +453,7 @@ private struct DuoChargingBolt: View {
     let size: CGFloat
     let offset: CGSize
     let color: Color
+    let opacity: Double
     let animationsEnabled: Bool
 
     var body: some View {
@@ -381,8 +462,9 @@ private struct DuoChargingBolt: View {
             .symbolRenderingMode(.monochrome)
             .foregroundStyle(color)
             .offset(offset)
-            .opacity(isVisible ? 1 : 0)
+            .opacity(isVisible ? opacity : 0)
             .scaleEffect(isVisible ? 1 : 0.72)
             .animation(animationsEnabled ? AnimationConstants.content : nil, value: isVisible)
+            .animation(animationsEnabled ? AnimationConstants.content : nil, value: offset)
     }
 }

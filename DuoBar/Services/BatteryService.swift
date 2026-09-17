@@ -8,6 +8,7 @@ final class BatteryService {
     private var runLoopSource: CFRunLoopSource?
     private var fallbackTimer: Timer?
     private var lastStatus: BatteryStatus?
+    private var lowPowerModeObserver: NSObjectProtocol?
 
     func start() {
         guard runLoopSource == nil else { return }
@@ -34,6 +35,16 @@ final class BatteryService {
         }
         self.fallbackTimer = fallbackTimer
         RunLoop.main.add(fallbackTimer, forMode: .common)
+
+        lowPowerModeObserver = NotificationCenter.default.addObserver(
+            forName: .NSProcessInfoPowerStateDidChange,
+            object: ProcessInfo.processInfo,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.refresh(trigger: .lowPowerModeChanged)
+            }
+        }
 
         refresh(trigger: .initial)
     }
@@ -80,7 +91,8 @@ final class BatteryService {
                 isCharging: isCharging,
                 isPluggedIn: isPluggedIn,
                 isFullyCharged: isFullyCharged,
-                isAvailable: true
+                isAvailable: true,
+                isLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
             ),
             trigger: trigger
         )
@@ -107,6 +119,9 @@ final class BatteryService {
         if let runLoopSource {
             CFRunLoopRemoveSource(CFRunLoopGetMain(), runLoopSource, .commonModes)
         }
+        if let lowPowerModeObserver {
+            NotificationCenter.default.removeObserver(lowPowerModeObserver)
+        }
     }
 
     private enum RefreshTrigger: String {
@@ -114,5 +129,6 @@ final class BatteryService {
         case notification
         case manual
         case fallback
+        case lowPowerModeChanged
     }
 }

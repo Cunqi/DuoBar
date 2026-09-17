@@ -4,6 +4,7 @@ import SwiftUI
 struct StatusPopoverView: View {
     @ObservedObject private var statusStore: SystemStatusStore
     @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
+    @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
     private let onClose: () -> Void
 
     init(statusStore: SystemStatusStore, onClose: @escaping () -> Void) {
@@ -20,7 +21,8 @@ struct StatusPopoverView: View {
                 DuoGlyphView(
                     status: statusStore.status,
                     metrics: DuoGlyphMetrics.standard.sized(20),
-                    animationsEnabled: false
+                    animationsEnabled: false,
+                    batteryColorCodingEnabled: batteryColorCoding
                 )
             }
             .padding(.horizontal, 2)
@@ -185,6 +187,7 @@ struct StatusPopoverView: View {
         if !battery.isAvailable { return "No internal battery" }
         if battery.isFullyCharged { return "Fully charged" }
         if battery.isCharging { return "Charging" }
+        if battery.isLowPowerModeEnabled { return "Low Power Mode" }
         if battery.isPluggedIn { return "Power adapter connected" }
         return "Using battery power"
     }
@@ -226,44 +229,56 @@ struct StatusPopoverView: View {
 #if DEBUG
 private struct DebugStatusSimulatorView: View {
     let statusStore: SystemStatusStore
+    @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
 
     var body: some View {
-        HStack {
-            Label("Debug Simulator", systemImage: "hammer")
-                .font(.system(size: 10.5, weight: .medium))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Menu("Simulate") {
-                Menu("Battery Level") {
-                    ForEach(DebugBatteryLevel.allCases) { level in
-                        Button(level.title) { statusStore.applyDebugBatteryLevel(level) }
+        VStack(spacing: 5) {
+            HStack {
+                Label("Debug Simulator", systemImage: "hammer")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Menu("Simulate") {
+                    Menu("Battery Level") {
+                        ForEach(DebugBatteryLevel.allCases) { level in
+                            Button(level.title) { statusStore.applyDebugBatteryLevel(level) }
+                        }
                     }
-                }
-                Menu("Battery Power") {
-                    ForEach(DebugPowerState.allCases) { powerState in
-                        Button(powerState.rawValue) { statusStore.applyDebugPowerState(powerState) }
+                    Menu("Battery Power") {
+                        ForEach(DebugPowerState.allCases) { powerState in
+                            Button(powerState.rawValue) { statusStore.applyDebugPowerState(powerState) }
+                        }
                     }
-                }
-                Menu("Network") {
-                    ForEach(DebugNetworkState.allCases) { networkState in
-                        Button(networkState.rawValue) { statusStore.applyDebugNetworkState(networkState) }
+                    Menu("Low Power Mode") {
+                        ForEach(DebugLowPowerMode.allCases) { lowPowerMode in
+                            Button(lowPowerMode.rawValue) { statusStore.applyDebugLowPowerMode(lowPowerMode) }
+                        }
                     }
-                }
-                Menu("Volume") {
-                    ForEach(DebugVolumeState.allCases) { volumeState in
-                        Button(volumeState.rawValue) { statusStore.applyDebugVolumeState(volumeState) }
+                    Menu("Battery Color Coding") {
+                        Button("Off") { batteryColorCoding = false }
+                        Button("On") { batteryColorCoding = true }
                     }
-                }
-                Menu("Audio Connection") {
-                    ForEach(DebugAudioDeviceState.allCases) { deviceState in
-                        Button(deviceState.rawValue) { statusStore.applyDebugAudioDeviceState(deviceState) }
+                    Menu("Network") {
+                        ForEach(DebugNetworkState.allCases) { networkState in
+                            Button(networkState.rawValue) { statusStore.applyDebugNetworkState(networkState) }
+                        }
                     }
+                    Menu("Volume") {
+                        ForEach(DebugVolumeState.allCases) { volumeState in
+                            Button(volumeState.rawValue) { statusStore.applyDebugVolumeState(volumeState) }
+                        }
+                    }
+                    Menu("Audio Connection") {
+                        ForEach(DebugAudioDeviceState.allCases) { deviceState in
+                            Button(deviceState.rawValue) { statusStore.applyDebugAudioDeviceState(deviceState) }
+                        }
+                    }
+                    Divider()
+                    Button("Restore Live Data") { statusStore.restoreLiveStatus() }
                 }
-                Divider()
-                Button("Restore Live Data") { statusStore.restoreLiveStatus() }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
             }
-            .menuStyle(.borderlessButton)
-            .fixedSize()
         }
         .padding(.horizontal, 6)
         .frame(height: 26)

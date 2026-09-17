@@ -6,6 +6,7 @@ struct BatteryStatus: Equatable, Sendable {
     var isPluggedIn: Bool
     var isFullyCharged: Bool
     var isAvailable: Bool
+    var isLowPowerModeEnabled = false
 
     static let unavailable = BatteryStatus(
         percentage: nil,

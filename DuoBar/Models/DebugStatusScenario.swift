@@ -5,7 +5,11 @@ enum DebugBatteryLevel: Int, CaseIterable, Identifiable {
     case full = 100
     case seventyFive = 75
     case half = 50
+    case nineteen = 19
+    case twenty = 20
     case twentyFive = 25
+    case eighty = 80
+    case ninetyNine = 99
     case low = 10
     case critical = 5
 
@@ -16,9 +20,20 @@ enum DebugBatteryLevel: Int, CaseIterable, Identifiable {
 enum DebugPowerState: String, CaseIterable, Identifiable {
     case charging = "Charging"
     case notCharging = "Not Charging"
+    case fullConnected = "Full + Connected"
 
     var id: String { rawValue }
     var isCharging: Bool { self == .charging }
+    var isPluggedIn: Bool { self != .notCharging }
+    var isFullyCharged: Bool { self == .fullConnected }
+}
+
+enum DebugLowPowerMode: String, CaseIterable, Identifiable {
+    case off = "Off"
+    case on = "On"
+
+    var id: String { rawValue }
+    var isEnabled: Bool { self == .on }
 }
 
 enum DebugNetworkState: String, CaseIterable, Identifiable {

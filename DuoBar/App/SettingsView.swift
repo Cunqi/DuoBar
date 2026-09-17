@@ -5,6 +5,7 @@ struct SettingsView: View {
     @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
     @AppStorage(PreferenceKeys.animationsEnabled) private var animationsEnabled = true
     @AppStorage(PreferenceKeys.menuBarIconScale) private var menuBarIconScale = MenuBarIconSize.defaultScale
+    @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
     @AppStorage(PreferenceKeys.adaptiveRingPriority) private var adaptiveRingPriorityRaw = PerformancePreference.automatic.rawValue
     @AppStorage(PreferenceKeys.adaptiveRingColorCoding) private var adaptiveRingColorCoding = false
     @StateObject private var launchAtLogin = LaunchAtLoginService()
@@ -63,6 +64,12 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.red)
                         .textSelection(.enabled)
+                }
+            }
+
+            if showsBatteryRingSettings {
+                Section("Battery Ring") {
+                    Toggle("Battery Color Coding", isOn: $batteryColorCoding)
                 }
             }
 
@@ -135,6 +142,14 @@ struct SettingsView: View {
         )
         #else
         AdaptiveRingSettingsEligibility.isEligible(for: deviceContextService.current())
+        #endif
+    }
+
+    private var showsBatteryRingSettings: Bool {
+        #if DEBUG
+        deviceContextService.current(simulateDesktop: simulateDesktopMac).ringBehavior == .batteryRing
+        #else
+        deviceContextService.current().ringBehavior == .batteryRing
         #endif
     }
 }

@@ -132,8 +132,27 @@ final class SystemStatusStore: ObservableObject {
             )
         }
         battery.isCharging = powerState.isCharging
-        battery.isPluggedIn = powerState.isCharging
-        battery.isFullyCharged = false
+        battery.isPluggedIn = powerState.isPluggedIn
+        battery.isFullyCharged = powerState.isFullyCharged
+        if powerState.isFullyCharged {
+            battery.percentage = 100
+        }
+        debugBatteryOverride = battery
+        mutate { $0.battery = battery }
+    }
+
+    func applyDebugLowPowerMode(_ lowPowerMode: DebugLowPowerMode) {
+        var battery = debugBatteryOverride ?? status.battery
+        if !battery.isAvailable {
+            battery = BatteryStatus(
+                percentage: 50,
+                isCharging: false,
+                isPluggedIn: false,
+                isFullyCharged: false,
+                isAvailable: true
+            )
+        }
+        battery.isLowPowerModeEnabled = lowPowerMode.isEnabled
         debugBatteryOverride = battery
         mutate { $0.battery = battery }
     }

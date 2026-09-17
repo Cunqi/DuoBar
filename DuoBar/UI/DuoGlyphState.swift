@@ -27,6 +27,7 @@ struct DuoGlyphState: Equatable {
     let batteryProgress: Double
     let batteryArcOpacity: Double
     let isCharging: Bool
+    let batteryPresentation: BatteryRingPresentation
     let centerState: DuoCenterState
     let volumeActiveDotCount: Int?
     let feedback: DuoSemanticFeedback
@@ -36,7 +37,8 @@ struct DuoGlyphState: Equatable {
         status: SystemStatus,
         presentation: StatusPresentation = .normal,
         ringProgressOverride: Double? = nil,
-        centerStateOverride: DuoCenterState? = nil
+        centerStateOverride: DuoCenterState? = nil,
+        batteryColorCodingEnabled: Bool = false
     ) {
         let battery = status.battery
         if let ringProgressOverride {
@@ -50,6 +52,9 @@ struct DuoGlyphState: Equatable {
         }
         batteryArcOpacity = ringProgressOverride == nil ? (battery.isAvailable ? 1 : 0.22) : 1
         isCharging = ringProgressOverride == nil && battery.isAvailable && battery.isCharging
+        batteryPresentation = ringProgressOverride == nil
+            ? BatteryRingPresentation.resolve(battery: battery, colorCodingEnabled: batteryColorCodingEnabled)
+            : BatteryRingPresentation(boltPlacement: .none, colorRole: .monochrome)
         volumeActiveDotCount = status.audio.volume.activeDotCount
 
         let normalCenter = centerStateOverride ?? Self.networkCenter(for: status.network)
