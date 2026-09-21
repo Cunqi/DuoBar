@@ -6,6 +6,8 @@
 
 **Three live states. One glyph. Less menu bar clutter.**
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 [**Download DuoBar 1.2.0**](https://github.com/Mikeli7666/DuoBar/releases/download/v1.2.0/DuoBar-1.2.0.dmg) · [**All Releases**](https://github.com/Mikeli7666/DuoBar/releases) · [**Report a Bug**](https://github.com/Mikeli7666/DuoBar/issues)
 
 macOS 13+ · Apple Silicon or Intel · Universal 2 · Free and Open Source
@@ -60,7 +62,6 @@ The original 1.0 release established DuoBar's Battery, Network, and Volume found
 - Light and Dark Mode
 - Launch at Login
 - Universal 2: Apple Silicon and Intel support on macOS 13+
-- English, Simplified Chinese, and Traditional Chinese
 - Native Swift, SwiftUI, and AppKit
 - No Dock icon
 
