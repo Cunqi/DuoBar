@@ -3,11 +3,21 @@ import SwiftUI
 
 @MainActor
 final class MenuBarController: NSObject {
+    private static let hoverCloseDelay: TimeInterval = 0.25
+
     private let statusItem: NSStatusItem
     private let popover = NSPopover()
     private let statusStore: SystemStatusStore
     private var hostingView: PassthroughHostingView<DuoStatusView>?
+    private var popoverTrackingView: HoverTrackingContainerView?
     private var lengthAnimationTimer: Timer?
+    private var pendingHoverClose: DispatchWorkItem?
+    private var hoverCloseGeneration: UInt = 0
+    private var defaultsObserver: NSObjectProtocol?
+    private var applicationResignObserver: NSObjectProtocol?
+    private var hoverInteraction = HoverPopoverInteraction(
+        isEnabled: UserDefaults.standard.bool(forKey: PreferenceKeys.openOnHover)
+    )
     private var isInvalidated = false
 
     init(statusStore: SystemStatusStore) {
@@ -18,6 +28,8 @@ final class MenuBarController: NSObject {
         super.init()
         configureStatusItem()
         configurePopover()
+        observeHoverPreference()
+        observeApplicationActivity()
     }
 
     private func configureStatusItem() {
@@ -34,6 +46,13 @@ final class MenuBarController: NSObject {
             self?.setStatusItemLength(width)
         }
         let hostingView = PassthroughHostingView(rootView: rootView)
+        hostingView.onHoverChanged = { [weak self] isInside in
+            guard let self else { return }
+            let commands = isInside
+                ? self.hoverInteraction.statusItemEntered()
+                : self.hoverInteraction.statusItemExited()
+            self.perform(commands)
+        }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(hostingView)
         NSLayoutConstraint.activate([
@@ -46,35 +65,152 @@ final class MenuBarController: NSObject {
     }
 
     private func configurePopover() {
-        #if DEBUG
-        popover.behavior = MarketingCaptureMode.isEnabled ? .applicationDefined : .transient
-        #else
-        popover.behavior = .transient
-        #endif
+        updatePopoverBehavior()
+        popover.delegate = self
         popover.animates = true
         popover.contentSize = NSSize(width: 304, height: 316)
-        popover.contentViewController = NSHostingController(
+        let hostingController = NSHostingController(
             rootView: StatusPopoverView(statusStore: statusStore) { [weak self] in
-                self?.popover.performClose(nil)
+                self?.closePopoverFromContent()
             }
         )
+        let trackingView = HoverTrackingContainerView()
+        trackingView.onHoverChanged = { [weak self] isInside in
+            guard let self else { return }
+            let commands = isInside
+                ? self.hoverInteraction.popoverEntered()
+                : self.hoverInteraction.popoverExited()
+            self.perform(commands)
+        }
+        let contentViewController = NSViewController()
+        contentViewController.view = trackingView
+        contentViewController.addChild(hostingController)
+        hostingController.view.translatesAutoresizingMaskIntoConstraints = false
+        trackingView.addSubview(hostingController.view)
+        NSLayoutConstraint.activate([
+            hostingController.view.leadingAnchor.constraint(equalTo: trackingView.leadingAnchor),
+            hostingController.view.trailingAnchor.constraint(equalTo: trackingView.trailingAnchor),
+            hostingController.view.topAnchor.constraint(equalTo: trackingView.topAnchor),
+            hostingController.view.bottomAnchor.constraint(equalTo: trackingView.bottomAnchor)
+        ])
+        popover.contentViewController = contentViewController
+        popoverTrackingView = trackingView
     }
 
     @objc private func togglePopover() {
-        guard let button = statusItem.button else { return }
+        perform(hoverInteraction.statusItemClicked())
+    }
 
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-            popover.contentViewController?.view.window?.makeKey()
+    private func showPopover() {
+        guard !popover.isShown, let button = statusItem.button else { return }
+
+        updatePopoverBehavior()
+        NSApp.activate(ignoringOtherApps: true)
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+        // Let the accessory app finish activating and the popover become key
+        // before asking CoreLocation to present its native authorization UI.
+        DispatchQueue.main.async { [weak self] in
+            self?.statusStore.requestWiFiSSIDAccess(trigger: .popoverOpened)
         }
+    }
+
+    private func closePopover() {
+        guard popover.isShown else { return }
+        popover.performClose(nil)
+    }
+
+    private func closePopoverFromContent() {
+        perform(hoverInteraction.popoverClosedExternally())
+        closePopover()
+    }
+
+    private func perform(_ commands: [HoverPopoverCommand]) {
+        guard !isInvalidated else { return }
+        for command in commands {
+            switch command {
+            case .open:
+                showPopover()
+            case .close:
+                closePopover()
+            case .scheduleClose:
+                scheduleHoverClose()
+            case .cancelClose:
+                cancelHoverClose()
+            }
+        }
+    }
+
+    private func scheduleHoverClose() {
+        cancelHoverClose()
+        let generation = hoverCloseGeneration
+        let workItem = DispatchWorkItem { [weak self] in
+            Task { @MainActor in
+                guard let self, self.hoverCloseGeneration == generation else { return }
+                self.pendingHoverClose = nil
+                self.perform(self.hoverInteraction.closeDelayElapsed())
+            }
+        }
+        pendingHoverClose = workItem
+        DispatchQueue.main.asyncAfter(
+            deadline: .now() + Self.hoverCloseDelay,
+            execute: workItem
+        )
+    }
+
+    private func cancelHoverClose() {
+        hoverCloseGeneration &+= 1
+        pendingHoverClose?.cancel()
+        pendingHoverClose = nil
+    }
+
+    private func observeHoverPreference() {
+        defaultsObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let enabled = UserDefaults.standard.bool(forKey: PreferenceKeys.openOnHover)
+                let commands = self.hoverInteraction.setEnabled(enabled)
+                self.updatePopoverBehavior()
+                self.perform(commands)
+            }
+        }
+    }
+
+    private func observeApplicationActivity() {
+        applicationResignObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: NSApp,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                self.perform(self.hoverInteraction.applicationResignedActive())
+            }
+        }
+    }
+
+    private func updatePopoverBehavior() {
+        #if DEBUG
+        if MarketingCaptureMode.isEnabled {
+            popover.behavior = .applicationDefined
+            return
+        }
+        #endif
+        popover.behavior = hoverInteraction.isEnabled ? .applicationDefined : .transient
     }
 
     #if DEBUG
     func setPopoverVisibleForMarketingCapture(_ visible: Bool) {
         guard popover.isShown != visible else { return }
-        togglePopover()
+        if visible {
+            showPopover()
+        } else {
+            closePopoverFromContent()
+        }
     }
     #endif
 
@@ -118,24 +254,101 @@ final class MenuBarController: NSObject {
     func invalidate() {
         guard !isInvalidated else { return }
         isInvalidated = true
+        cancelHoverClose()
         lengthAnimationTimer?.invalidate()
         lengthAnimationTimer = nil
         popover.performClose(nil)
+        if let defaultsObserver {
+            NotificationCenter.default.removeObserver(defaultsObserver)
+            self.defaultsObserver = nil
+        }
+        if let applicationResignObserver {
+            NotificationCenter.default.removeObserver(applicationResignObserver)
+            self.applicationResignObserver = nil
+        }
+        popoverTrackingView?.removeFromSuperview()
+        popoverTrackingView = nil
         hostingView?.removeFromSuperview()
         hostingView = nil
         NSStatusBar.system.removeStatusItem(statusItem)
     }
 
     deinit {
+        pendingHoverClose?.cancel()
         lengthAnimationTimer?.invalidate()
+        if let defaultsObserver {
+            NotificationCenter.default.removeObserver(defaultsObserver)
+        }
+        if let applicationResignObserver {
+            NotificationCenter.default.removeObserver(applicationResignObserver)
+        }
         if !isInvalidated {
             NSStatusBar.system.removeStatusItem(statusItem)
         }
     }
 }
 
+extension MenuBarController: NSPopoverDelegate {
+    func popoverDidClose(_ notification: Notification) {
+        perform(hoverInteraction.popoverClosedExternally())
+    }
+}
+
 private final class PassthroughHostingView<Content: View>: NSHostingView<Content> {
+    var onHoverChanged: ((Bool) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
+}
+
+final class HoverTrackingContainerView: NSView {
+    var onHoverChanged: ((Bool) -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea {
+            removeTrackingArea(hoverTrackingArea)
+        }
+        let trackingArea = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        )
+        addTrackingArea(trackingArea)
+        hoverTrackingArea = trackingArea
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        onHoverChanged?(true)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHoverChanged?(false)
+    }
+
 }

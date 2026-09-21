@@ -6,7 +6,7 @@
 
 **Three live states. One glyph. Less menu bar clutter.**
 
-[**Download DuoBar 1.1**](https://github.com/Mikeli7666/DuoBar/releases/latest) · [**Watch the Launch Film**](https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4)
+[**Download DuoBar 1.2.0**](https://github.com/Mikeli7666/DuoBar/releases/latest) · [**Watch the Launch Film**](https://github.com/Mikeli7666/DuoBar/releases/download/v1.0.0/DuoBar-1.0-Official-Launch-Film.mp4)
 
 macOS 13+ · Apple Silicon or Intel · Universal 2 · Free and Open Source
 
@@ -48,6 +48,8 @@ DuoBar 1.0 redesigns the original beta around Battery, Network, and Volume. It a
 - Battery Ring with live level, dynamic charging bolt, low-battery state, and optional Battery Color Coding
 - Adaptive Ring for desktop Macs: brightness baseline with automatic CPU, memory, and thermal pressure awareness
 - Automatic Wi-Fi, Ethernet, and offline network states
+- Wi-Fi network name display and public Wi-Fi power control
+- Optional Open on Hover popover behavior
 - Four-dot live volume indicator
 - Compact volume slider and public Core Audio mute control where supported
 - Temporary AirPods/headphones connection presentation
@@ -67,12 +69,12 @@ DuoBar 1.0 redesigns the original beta around Battery, Network, and Volume. It a
 
 ## Installation
 
-1. Download `DuoBar-1.1.0.dmg` from [GitHub Releases](https://github.com/Mikeli7666/DuoBar/releases).
+1. Download `DuoBar-1.2.0.dmg` from [GitHub Releases](https://github.com/Mikeli7666/DuoBar/releases).
 2. Open the DMG and move DuoBar to Applications.
 3. Try opening DuoBar from Applications.
 4. If macOS blocks the first launch, right-click DuoBar and choose **Open**, or use **System Settings → Privacy & Security → Open Anyway**.
 
-DuoBar 1.1.0 uses Hardened Runtime and ad-hoc signing. It is not yet Developer ID signed or notarized while Apple Developer Program enrollment is pending; notarized distribution is planned once it becomes available. Never disable Gatekeeper or System Integrity Protection to install DuoBar.
+DuoBar 1.2.0 uses Developer ID signing, Hardened Runtime, and Apple notarization. Never disable Gatekeeper or System Integrity Protection to install DuoBar.
 
 ## Permissions
 

@@ -32,7 +32,8 @@ struct StatusPopoverView: View {
                 title: localized("Network"),
                 detail: networkDetail,
                 stateText: networkState,
-                tint: .primary
+                tint: .primary,
+                trailing: wifiPowerToggle
             )
 
             VolumeStatusRow(
@@ -43,12 +44,9 @@ struct StatusPopoverView: View {
                 onSetMuted: statusStore.setMuted
             )
 
-            StatusRow(
-                symbol: batterySymbol,
-                title: localized("Battery"),
-                detail: batteryDetail,
-                stateText: batteryPercentage,
-                tint: .primary
+            BatteryStatusRow(
+                battery: statusStore.status.battery,
+                showPercentage: showBatteryPercentage
             )
 
             StatusRow(
@@ -59,12 +57,8 @@ struct StatusPopoverView: View {
                 tint: .primary
             )
 
-            #if DEBUG
-            if !MarketingCaptureMode.isEnabled {
-                DebugStatusSimulatorView(statusStore: statusStore)
-            }
-            #endif
-
+            // Development diagnostics belong in the dedicated DEBUG diagnostics
+            // surface, never in the production status-card hierarchy.
             Divider()
 
             HStack(spacing: 6) {
@@ -85,7 +79,6 @@ struct StatusPopoverView: View {
         .frame(width: 304)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
-            statusStore.requestWiFiSSIDAccess()
         }
     }
 
@@ -146,6 +139,9 @@ struct StatusPopoverView: View {
 
     private var networkDetail: String {
         let network = statusStore.status.network
+        if statusStore.wifiPowerControlError != nil {
+            return localized("Unable to change Wi-Fi power")
+        }
         guard network.isAvailable else { return localized("No network interface") }
         guard network.isConnected else {
             return network.isWiFiPoweredOn == false ? localized("Wi-Fi disabled") : localized("Not connected")
@@ -161,6 +157,7 @@ struct StatusPopoverView: View {
     private var networkState: String {
         let network = statusStore.status.network
         guard network.isAvailable else { return localized("Unavailable") }
+        if network.isWiFiPoweredOn == false, !network.isConnected { return localized("Off") }
         guard network.isConnected else { return localized("Offline") }
         switch network.transport {
         case .wifi: return localized("Wi-Fi")
@@ -170,31 +167,17 @@ struct StatusPopoverView: View {
         }
     }
 
-    private var batterySymbol: String {
-        let battery = statusStore.status.battery
-        if battery.isCharging { return "battery.100percent.bolt" }
-        if battery.isFullyCharged { return "battery.100percent" }
-        switch battery.percentage ?? 0 {
-        case 76...100: return "battery.100percent"
-        case 51...75: return "battery.75percent"
-        case 26...50: return "battery.50percent"
-        default: return "battery.25percent"
-        }
-    }
-
-    private var batteryDetail: String {
-        let battery = statusStore.status.battery
-        if !battery.isAvailable { return localized("No internal battery") }
-        if battery.isFullyCharged { return localized("Fully charged") }
-        if battery.isCharging { return localized("Charging") }
-        if battery.isLowPowerModeEnabled { return localized("Low Power Mode") }
-        if battery.isPluggedIn { return localized("Power adapter connected") }
-        return localized("Using battery power")
-    }
-
-    private var batteryPercentage: String {
-        guard showBatteryPercentage else { return "—" }
-        return statusStore.status.battery.percentage.map { localized("%d%%", $0) } ?? "—"
+    private var wifiPowerToggle: AnyView? {
+        guard let wifiPowerState = statusStore.status.network.isWiFiPoweredOn else { return nil }
+        return AnyView(
+            Toggle(localized("Wi-Fi power"), isOn: Binding(
+                get: { wifiPowerState },
+                set: { statusStore.setWiFiPower($0) }
+            ))
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .accessibilityLabel(localized("Wi-Fi power"))
+        )
     }
 
     private var audioOutputSymbol: String {
@@ -226,10 +209,73 @@ struct StatusPopoverView: View {
     }
 }
 
+struct BatteryStatusRow: View {
+    let battery: BatteryStatus
+    let showPercentage: Bool
+
+    var body: some View {
+        HStack(spacing: 11) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(.primary)
+                .frame(width: 28, height: 28)
+                .background(.primary.opacity(0.12), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 8) {
+                    Text(localized("Battery"))
+                        .font(.system(size: 12.5, weight: .semibold))
+                    Spacer(minLength: 8)
+                    if let trailingValue {
+                        Text(trailingValue)
+                            .font(.system(size: 10.5, weight: .medium, design: .rounded))
+                            .foregroundStyle(.secondary)
+                            .monospacedDigit()
+                    }
+                }
+                Text(detail)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+        }
+        .padding(.horizontal, 10)
+        .frame(height: 48)
+        .background(.primary.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+
+    var trailingValue: String? {
+        guard showPercentage, let percentage = battery.percentage else { return nil }
+        return localized("%d%%", percentage)
+    }
+
+    var detail: String {
+        guard battery.isAvailable else { return localized("No internal battery") }
+        if battery.isFullyCharged { return localized("Fully charged") }
+        if battery.isCharging { return localized("Charging") }
+        if battery.isLowPowerModeEnabled { return localized("Low Power Mode") }
+        if battery.isPluggedIn { return localized("Power adapter connected") }
+        return localized("Using battery power")
+    }
+
+    private var symbol: String {
+        if battery.isCharging { return "battery.100percent.bolt" }
+        if battery.isFullyCharged { return "battery.100percent" }
+        switch battery.percentage ?? 0 {
+        case 76...100: return "battery.100percent"
+        case 51...75: return "battery.75percent"
+        case 26...50: return "battery.50percent"
+        default: return "battery.25percent"
+        }
+    }
+}
+
 #if DEBUG
 private struct DebugStatusSimulatorView: View {
     let statusStore: SystemStatusStore
     @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
+    @ObservedObject private var adaptiveRingMonitor = AdaptiveRingMonitor.shared
 
     var body: some View {
         VStack(spacing: 5) {
@@ -279,9 +325,56 @@ private struct DebugStatusSimulatorView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
             }
+
+            Divider()
+
+            LabeledContent("Laptop Ring Mode", value: laptopRingModeLabel)
+            LabeledContent("Charging session", value: chargingSessionLabel)
+            LabeledContent("Adaptive telemetry lease", value: adaptiveRingMonitor.monitoringOwnerCount > 0 ? "Active" : "Inactive")
+            LabeledContent("Adaptive monitor", value: adaptiveRingMonitor.isMonitoring ? "Running" : "Stopped")
+            LabeledContent("Adaptive source", value: adaptiveRingMonitor.debugTestSource.rawValue)
+            LabeledContent("Brightness", value: brightnessLabel)
+            LabeledContent("Adaptive metric", value: adaptiveRingMonitor.state.diagnosticLabel)
+            LabeledContent("Adaptive progress", value: adaptiveProgressLabel)
+            LabeledContent("Final ring override", value: finalRingOverrideLabel)
+
         }
         .padding(.horizontal, 6)
-        .frame(height: 26)
+        .frame(minHeight: 26)
+    }
+
+    private var laptopRingModeLabel: String {
+        switch statusStore.laptopRingModeState.mode {
+        case .battery: "Battery"
+        case .adaptive: "Adaptive"
+        }
+    }
+
+    private var chargingSessionLabel: String {
+        guard let start = statusStore.laptopRingModeState.sessionStartPercentage,
+              let target = statusStore.laptopRingModeState.targetPercentage
+        else { return "None" }
+        let waiting = statusStore.laptopRingModeState.isWaitingForFullChargeDelay ? " · waiting for full delay" : ""
+        return "\(start)% → \(target)%\(waiting)"
+    }
+
+    private var brightnessLabel: String {
+        guard let availability = adaptiveRingMonitor.brightnessSnapshot?.availability else { return "Sampling…" }
+        switch availability {
+        case .available(let value): return String(format: "%.0f%%", value * 100)
+        case .unavailable: return "Unavailable"
+        }
+    }
+
+    private var adaptiveProgressLabel: String {
+        let target = AdaptiveRingVisualTarget(state: adaptiveRingMonitor.state).progress
+        return String(format: "%.1f%%", target * 100)
+    }
+
+    private var finalRingOverrideLabel: String {
+        guard statusStore.usesAdaptiveRing else { return "Battery Ring" }
+        let target = AdaptiveRingVisualTarget(state: adaptiveRingMonitor.state).progress
+        return String(format: "%.1f%%", target * 100)
     }
 }
 #endif
