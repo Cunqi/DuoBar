@@ -5,6 +5,8 @@ struct StatusPopoverView: View {
     @ObservedObject private var statusStore: SystemStatusStore
     @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
     @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
+    @AppStorage(PreferenceKeys.popoverLayout) private var popoverLayoutRaw = ""
+    @StateObject private var audioSwitcher = AudioDeviceSwitcher()
     private let onClose: () -> Void
 
     init(statusStore: SystemStatusStore, onClose: @escaping () -> Void) {
@@ -27,36 +29,9 @@ struct StatusPopoverView: View {
             }
             .padding(.horizontal, 2)
 
-            NetworkStatusSection(
-                symbol: networkSymbol,
-                symbolVariableValue: networkSymbolVariableValue,
-                detail: networkDetail,
-                stateText: networkState,
-                currentSSID: statusStore.status.network.ssid,
-                canBrowseNetworks: statusStore.status.network.isWiFiPoweredOn == true,
-                trailing: wifiPowerToggle
-            )
-
-            VolumeStatusRow(
-                volume: statusStore.status.audio.volume,
-                hasOutputDevice: statusStore.status.audio.defaultOutput != nil,
-                playbackDeviceIdentifier: statusStore.status.audio.defaultOutput?.uid,
-                onSetVolume: statusStore.setVolume,
-                onSetMuted: statusStore.setMuted
-            )
-
-            BatteryStatusRow(
-                battery: statusStore.status.battery,
-                showPercentage: showBatteryPercentage
-            )
-
-            StatusRow(
-                symbol: audioOutputSymbol,
-                title: localized("Audio Output"),
-                detail: audioOutputDetail,
-                stateText: audioOutputState,
-                tint: .primary
-            )
+            ForEach(popoverLayout.visibleModules) { module in
+                moduleView(module)
+            }
 
             // Development diagnostics belong in the dedicated DEBUG diagnostics
             // surface, never in the production status-card hierarchy.
@@ -80,6 +55,53 @@ struct StatusPopoverView: View {
         .frame(width: 304)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
+            audioSwitcher.start()
+        }
+    }
+
+    private var popoverLayout: PopoverLayout {
+        PopoverLayout.resolve(
+            stored: popoverLayoutRaw,
+            hasBattery: statusStore.deviceContext.ringBehavior == .batteryRing
+        )
+    }
+
+    @ViewBuilder
+    private func moduleView(_ module: PopoverModule) -> some View {
+        switch module {
+        case .network:
+            NetworkStatusSection(
+                symbol: networkSymbol,
+                symbolVariableValue: networkSymbolVariableValue,
+                detail: networkDetail,
+                stateText: networkState,
+                currentSSID: statusStore.status.network.ssid,
+                canBrowseNetworks: statusStore.status.network.isWiFiPoweredOn == true,
+                trailing: wifiPowerToggle
+            )
+        case .volume:
+            VolumeStatusRow(
+                volume: statusStore.status.audio.volume,
+                hasOutputDevice: statusStore.status.audio.defaultOutput != nil,
+                playbackDeviceIdentifier: statusStore.status.audio.defaultOutput?.uid,
+                onSetVolume: statusStore.setVolume,
+                onSetMuted: statusStore.setMuted
+            )
+        case .battery:
+            BatteryStatusRow(
+                battery: statusStore.status.battery,
+                showPercentage: showBatteryPercentage
+            )
+        case .audioOutput:
+            AudioOutputSection(symbol: audioOutputSymbol, detail: audioOutputDetail, stateText: audioOutputState, switcher: audioSwitcher)
+        case .audioInput:
+            AudioInputSection(switcher: audioSwitcher)
+        case .systemLoad:
+            SystemLoadRow()
+        case .keepAwake:
+            KeepAwakeRow()
+        case .diskSpace:
+            DiskSpaceRow()
         }
     }
 

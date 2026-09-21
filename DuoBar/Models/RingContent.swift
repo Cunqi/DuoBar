@@ -161,12 +161,12 @@ enum RingReading: Equatable, Sendable {
         case let .cpu(percent): localized("%@ %d%%", localized("CPU"), percent)
         case let .memory(percent): localized("%@ %d%%", localized("Memory"), percent)
         case let .volume(percent): localized("%@ %d%%", localized("Volume"), percent)
-        case let .thermal(state): localized("%@ %@", localized("Thermal"), Self.thermalLabel(state))
+        case let .thermal(state): localized("%@ %@", localized("Thermal"), Self.thermalLabel(for: state))
         case .unavailable: localized("No data")
         }
     }
 
-    private static func thermalLabel(_ state: PerformanceThermalState) -> String {
+    static func thermalLabel(for state: PerformanceThermalState) -> String {
         switch state {
         case .nominal: localized("Thermal Nominal")
         case .fair: localized("Thermal Fair")

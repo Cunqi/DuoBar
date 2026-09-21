@@ -8,6 +8,7 @@ enum PreferenceKeys {
     static let openOnHover = "duoBar.openOnHover"
     static let ringContent = "duoBar.ringContent"
     static let ringPressureOverride = "duoBar.ringPressureOverride"
+    static let popoverLayout = "duoBar.popoverLayout"
 
     #if DEBUG
     static let simulateDesktopMac = "debug.simulateDesktopMac"

@@ -111,3 +111,13 @@
 "Thermal Fair" = "偏高";
 "Thermal Serious" = "严重";
 "Thermal Critical" = "危急";
+"Popover" = "弹出面板";
+"Choose what the popover shows. Drag to reorder." = "选择弹出面板显示的内容，拖动可调整顺序。";
+"Audio Input" = "音频输入";
+"System Load" = "系统负载";
+"Keep Awake" = "保持唤醒";
+"Disk Space" = "磁盘空间";
+"No input device" = "没有输入设备";
+"Input volume" = "输入音量";
+"Display and system won't sleep automatically" = "显示器和系统不会自动睡眠";
+"%@ available of %@" = "可用 %@，共 %@";

@@ -4,6 +4,7 @@ import SwiftUI
 enum SettingsPane: String, Hashable, Identifiable {
     case general
     case menuBar
+    case popover
     #if DEBUG
     case debugDiagnostics
     case debugGlyphTuning
@@ -15,6 +16,7 @@ enum SettingsPane: String, Hashable, Identifiable {
         switch self {
         case .general: localized("General")
         case .menuBar: localized("Menu Bar Icon")
+        case .popover: localized("Popover")
         #if DEBUG
         case .debugDiagnostics: "Diagnostics"
         case .debugGlyphTuning: "Glyph Tuning"
@@ -26,6 +28,7 @@ enum SettingsPane: String, Hashable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .menuBar: "menubar.rectangle"
+        case .popover: "list.bullet.rectangle"
         #if DEBUG
         case .debugDiagnostics: "stethoscope"
         case .debugGlyphTuning: "slider.horizontal.3"
@@ -66,6 +69,7 @@ struct SettingsView: View {
         switch pane {
         case .general: GeneralSettingsPane()
         case .menuBar: MenuBarSettingsPane(hasBattery: hasBattery)
+        case .popover: PopoverSettingsPane(hasBattery: hasBattery)
         #if DEBUG
         case .debugDiagnostics: SettingsPaneForm { DebugPerformanceDiagnosticsView() }
         case .debugGlyphTuning: SettingsPaneForm { DebugDuoGlyphTuningView() }
@@ -74,7 +78,7 @@ struct SettingsView: View {
     }
 
     private var visiblePanes: [SettingsPane] {
-        var panes: [SettingsPane] = [.general, .menuBar]
+        var panes: [SettingsPane] = [.general, .menuBar, .popover]
         #if DEBUG
         if !MarketingCaptureMode.isEnabled {
             panes.append(contentsOf: [.debugDiagnostics, .debugGlyphTuning])
@@ -171,7 +175,6 @@ private struct SettingsPaneForm<Content: View>: View {
 
 private struct GeneralSettingsPane: View {
     @AppStorage(PreferenceKeys.openOnHover) private var openOnHover = false
-    @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
     @StateObject private var launchAtLogin = LaunchAtLoginService()
 
     var body: some View {
@@ -205,10 +208,6 @@ private struct GeneralSettingsPane: View {
                         .foregroundStyle(.red)
                         .textSelection(.enabled)
                 }
-            }
-
-            Section {
-                Toggle(localized("Show battery percentage in popover"), isOn: $showBatteryPercentage)
             }
         }
         .onAppear {
@@ -322,6 +321,70 @@ private struct MenuBarSettingsPane: View {
         Binding(
             get: { PerformancePreference(rawValue: adaptiveRingPriorityRaw) ?? .automatic },
             set: { adaptiveRingPriorityRaw = $0.rawValue }
+        )
+    }
+}
+
+private struct PopoverSettingsPane: View {
+    let hasBattery: Bool
+
+    @AppStorage(PreferenceKeys.popoverLayout) private var popoverLayoutRaw = ""
+    @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(localized("Choose what the popover shows. Drag to reorder."))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            List {
+                ForEach(layout.configurableEntries(hasBattery: hasBattery)) { entry in
+                    HStack(spacing: 10) {
+                        Image(systemName: "line.3.horizontal")
+                            .foregroundStyle(.tertiary)
+                        Image(systemName: entry.module.symbol)
+                            .frame(width: 18)
+                            .foregroundStyle(.secondary)
+                        Text(entry.module.localizedDisplayName)
+                        Spacer()
+                        Toggle(entry.module.localizedDisplayName, isOn: visibility(of: entry.module))
+                            .labelsHidden()
+                            .toggleStyle(.switch)
+                            .controlSize(.mini)
+                    }
+                    .padding(.vertical, 3)
+                }
+                .onMove { source, destination in
+                    var updated = layout
+                    updated.moveConfigurable(fromOffsets: source, toOffset: destination, hasBattery: hasBattery)
+                    popoverLayoutRaw = updated.storageValue
+                }
+            }
+            .listStyle(.inset(alternatesRowBackgrounds: false))
+            .frame(height: CGFloat(layout.configurableEntries(hasBattery: hasBattery).count) * 34 + 12)
+            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+
+            if hasBattery {
+                Toggle(localized("Show battery percentage in popover"), isOn: $showBatteryPercentage)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(20)
+    }
+
+    private var layout: PopoverLayout {
+        PopoverLayout.resolve(stored: popoverLayoutRaw, hasBattery: hasBattery)
+    }
+
+    private func visibility(of module: PopoverModule) -> Binding<Bool> {
+        Binding(
+            get: { layout.entries.first { $0.module == module }?.isVisible ?? true },
+            set: { isVisible in
+                var updated = layout
+                updated.setVisible(isVisible, for: module)
+                popoverLayoutRaw = updated.storageValue
+            }
         )
     }
 }
