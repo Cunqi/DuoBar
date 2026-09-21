@@ -84,3 +84,11 @@
 "volume unavailable" = "音量無法使用";
 "battery unavailable" = "電池無法使用";
 "%@, %@, %@" = "%@、%@、%@";
+"Show Wi-Fi networks" = "顯示 Wi-Fi 網路";
+"Scanning for networks…" = "正在掃描網路…";
+"No networks found" = "找不到網路";
+"Wi-Fi Settings…" = "Wi-Fi 設定…";
+"Password" = "密碼";
+"Cancel" = "取消";
+"Join" = "加入";
+"Unable to join “%@”" = "無法加入「%@」";

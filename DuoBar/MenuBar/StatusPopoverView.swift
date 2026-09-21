@@ -27,12 +27,13 @@ struct StatusPopoverView: View {
             }
             .padding(.horizontal, 2)
 
-            StatusRow(
+            NetworkStatusSection(
                 symbol: networkSymbol,
-                title: localized("Network"),
+                symbolVariableValue: networkSymbolVariableValue,
                 detail: networkDetail,
                 stateText: networkState,
-                tint: .primary,
+                currentSSID: statusStore.status.network.ssid,
+                canBrowseNetworks: statusStore.status.network.isWiFiPoweredOn == true,
                 trailing: wifiPowerToggle
             )
 
@@ -135,6 +136,10 @@ struct StatusPopoverView: View {
         case .other: return "ellipsis.circle"
         case .none: return "network.slash"
         }
+    }
+
+    private var networkSymbolVariableValue: Double? {
+        networkSymbol == "wifi" ? statusStore.status.network.wifiSignalLevel.symbolVariableValue : nil
     }
 
     private var networkDetail: String {

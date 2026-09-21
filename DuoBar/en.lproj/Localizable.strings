@@ -84,3 +84,11 @@
 "volume unavailable" = "volume unavailable";
 "battery unavailable" = "battery unavailable";
 "%@, %@, %@" = "%@, %@, %@";
+"Show Wi-Fi networks" = "Show Wi-Fi networks";
+"Scanning for networks…" = "Scanning for networks…";
+"No networks found" = "No networks found";
+"Wi-Fi Settings…" = "Wi-Fi Settings…";
+"Password" = "Password";
+"Cancel" = "Cancel";
+"Join" = "Join";
+"Unable to join “%@”" = "Unable to join “%@”";

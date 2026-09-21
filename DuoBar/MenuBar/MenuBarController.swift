@@ -10,6 +10,7 @@ final class MenuBarController: NSObject {
     private let statusStore: SystemStatusStore
     private var hostingView: PassthroughHostingView<DuoStatusView>?
     private var popoverTrackingView: HoverTrackingContainerView?
+    private var popoverSizeObservation: NSKeyValueObservation?
     private var lengthAnimationTimer: Timer?
     private var pendingHoverClose: DispatchWorkItem?
     private var hoverCloseGeneration: UInt = 0
@@ -95,6 +96,14 @@ final class MenuBarController: NSObject {
         ])
         popover.contentViewController = contentViewController
         popoverTrackingView = trackingView
+        hostingController.sizingOptions = .preferredContentSize
+        popoverSizeObservation = hostingController.observe(\.preferredContentSize, options: [.initial, .new]) { [weak self] controller, _ in
+            let size = controller.preferredContentSize
+            guard size.width > 0, size.height > 0 else { return }
+            DispatchQueue.main.async {
+                self?.popover.contentSize = size
+            }
+        }
     }
 
     @objc private func togglePopover() {
