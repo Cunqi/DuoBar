@@ -54,10 +54,7 @@ struct NetworkStatus: Equatable, Sendable {
         guard isWiFiPoweredOn != false else { return .disabled }
         guard isConnected else { return .disconnected }
 
-        guard let rssi, rssi < 0 else { return .medium }
-        if rssi >= -67 { return .strong }
-        if rssi >= -75 { return .medium }
-        return .weak
+        return WiFiSignalLevel(rssi: rssi)
     }
 }
 
@@ -68,6 +65,20 @@ enum WiFiSignalLevel: Hashable, Sendable {
     case disconnected
     case disabled
     case unavailable
+
+    init(rssi: Int?) {
+        guard let rssi, rssi < 0 else {
+            self = .medium
+            return
+        }
+        if rssi >= -67 {
+            self = .strong
+        } else if rssi >= -75 {
+            self = .medium
+        } else {
+            self = .weak
+        }
+    }
 
     var symbolVariableValue: Double? {
         switch self {

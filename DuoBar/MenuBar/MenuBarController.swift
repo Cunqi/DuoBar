@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 @MainActor
@@ -10,6 +11,7 @@ final class MenuBarController: NSObject {
     private let statusStore: SystemStatusStore
     private var hostingView: PassthroughHostingView<DuoStatusView>?
     private var popoverTrackingView: HoverTrackingContainerView?
+    private var popoverSizeObservation: NSKeyValueObservation?
     private var lengthAnimationTimer: Timer?
     private var pendingHoverClose: DispatchWorkItem?
     private var hoverCloseGeneration: UInt = 0
@@ -19,6 +21,8 @@ final class MenuBarController: NSObject {
         isEnabled: UserDefaults.standard.bool(forKey: PreferenceKeys.openOnHover)
     )
     private var isInvalidated = false
+    private var hoverTextSubscription: AnyCancellable?
+    private let hoverPanel = StatusHoverPanel()
 
     init(statusStore: SystemStatusStore) {
         self.statusStore = statusStore
@@ -30,6 +34,7 @@ final class MenuBarController: NSObject {
         configurePopover()
         observeHoverPreference()
         observeApplicationActivity()
+        observeHoverTextInputs()
     }
 
     private func configureStatusItem() {
@@ -40,7 +45,6 @@ final class MenuBarController: NSObject {
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         button.image = nil
         button.title = ""
-        button.toolTip = localized("DuoBar system status")
 
         let rootView = DuoStatusView(statusStore: statusStore) { [weak self] width in
             self?.setStatusItemLength(width)
@@ -52,6 +56,7 @@ final class MenuBarController: NSObject {
                 ? self.hoverInteraction.statusItemEntered()
                 : self.hoverInteraction.statusItemExited()
             self.perform(commands)
+            self.updateHoverPanel(isInside: isInside)
         }
         hostingView.translatesAutoresizingMaskIntoConstraints = false
         button.addSubview(hostingView)
@@ -95,6 +100,14 @@ final class MenuBarController: NSObject {
         ])
         popover.contentViewController = contentViewController
         popoverTrackingView = trackingView
+        hostingController.sizingOptions = .preferredContentSize
+        popoverSizeObservation = hostingController.observe(\.preferredContentSize, options: [.initial, .new]) { [weak self] controller, _ in
+            let size = controller.preferredContentSize
+            guard size.width > 0, size.height > 0 else { return }
+            DispatchQueue.main.async {
+                self?.popover.contentSize = size
+            }
+        }
     }
 
     @objc private func togglePopover() {
@@ -103,6 +116,7 @@ final class MenuBarController: NSObject {
 
     private func showPopover() {
         guard !popover.isShown, let button = statusItem.button else { return }
+        hoverPanel.hide()
 
         updatePopoverBehavior()
         NSApp.activate(ignoringOtherApps: true)
@@ -176,7 +190,51 @@ final class MenuBarController: NSObject {
                 let commands = self.hoverInteraction.setEnabled(enabled)
                 self.updatePopoverBehavior()
                 self.perform(commands)
+                self.updateHoverText()
             }
+        }
+    }
+
+    private func observeHoverTextInputs() {
+        let monitor = AdaptiveRingMonitor.shared
+        hoverTextSubscription = statusStore.$status
+            .combineLatest(monitor.$state, monitor.$performanceSnapshot, monitor.$brightnessSnapshot)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateHoverText()
+            }
+    }
+
+    private func updateHoverText() {
+        let status = statusStore.status
+        let hasBattery = !statusStore.usesReleasedAdaptiveRing
+        let display = RingContentResolver.resolve(
+            content: RingContent.stored(),
+            inputs: AdaptiveRingMonitor.shared.ringInputs(
+                hasBattery: hasBattery,
+                allowsPressureOverride: UserDefaults.standard.bool(forKey: PreferenceKeys.ringPressureOverride),
+                volume: status.audio.volume
+            )
+        )
+        let reading = RingReading(
+            display: display,
+            snapshot: AdaptiveRingMonitor.shared.performanceSnapshot,
+            batteryPercentage: status.battery.percentage
+        )
+        hoverPanel.update(text: StatusHoverText.text(ring: reading, network: status.network, volume: status.audio.volume))
+    }
+
+    private func updateHoverPanel(isInside: Bool) {
+        guard isInside, !hoverInteraction.isEnabled, !popover.isShown else {
+            hoverPanel.hide()
+            return
+        }
+        updateHoverText()
+        hoverPanel.scheduleShow { [weak self] in
+            guard let self, !self.popover.isShown,
+                  let button = self.statusItem.button, let window = button.window
+            else { return nil }
+            return window.convertToScreen(button.convert(button.bounds, to: nil))
         }
     }
 
@@ -255,6 +313,8 @@ final class MenuBarController: NSObject {
         guard !isInvalidated else { return }
         isInvalidated = true
         cancelHoverClose()
+        hoverPanel.hide()
+        hoverTextSubscription = nil
         lengthAnimationTimer?.invalidate()
         lengthAnimationTimer = nil
         popover.performClose(nil)

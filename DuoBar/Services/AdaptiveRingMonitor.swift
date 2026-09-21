@@ -301,3 +301,17 @@ private func adaptiveRingDisplayConfigurationChanged(
         monitor?.displayConfigurationDidChange()
     }
 }
+
+extension AdaptiveRingMonitor {
+    func ringInputs(hasBattery: Bool, allowsPressureOverride: Bool, volume: OutputVolumeStatus) -> RingContentInputs {
+        RingContentInputs(
+            hasBattery: hasBattery,
+            allowsPressureOverride: allowsPressureOverride,
+            automaticState: state,
+            performanceSnapshot: performanceSnapshot,
+            brightnessSnapshot: brightnessSnapshot,
+            volume: volume,
+            timestamp: ProcessInfo.processInfo.systemUptime
+        )
+    }
+}

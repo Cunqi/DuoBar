@@ -2,12 +2,13 @@ import Foundation
 
 enum AdaptiveRingState: Equatable, Sendable {
     case brightness(Double)
+    case volume(Double)
     case neutral
     case performance(metric: PerformanceMetric, value: Double)
 
     var normalizedRingValue: Double? {
         switch self {
-        case .brightness(let value), .performance(_, let value): value
+        case .brightness(let value), .volume(let value), .performance(_, let value): value
         case .neutral: nil
         }
     }
@@ -15,6 +16,7 @@ enum AdaptiveRingState: Equatable, Sendable {
     var diagnosticLabel: String {
         switch self {
         case .brightness: "Brightness"
+        case .volume: "Volume"
         case .neutral: "Neutral"
         case .performance(let metric, _): "Performance · \(metric.rawValue.capitalized)"
         }
@@ -75,6 +77,7 @@ struct AdaptiveRingPresentationTransition: Equatable, Sendable {
 enum AdaptiveRingVisualMeaning: Equatable, Sendable {
     case neutral
     case brightness
+    case volume
     case performance(PerformanceMetric)
 }
 
@@ -91,6 +94,9 @@ struct AdaptiveRingVisualTarget: Equatable, Sendable {
             progress = Self.neutralBaseline
         case .brightness(let value):
             meaning = .brightness
+            progress = Self.clamp(value)
+        case .volume(let value):
+            meaning = .volume
             progress = Self.clamp(value)
         case .performance(let metric, let value):
             meaning = .performance(metric)
@@ -136,19 +142,19 @@ enum AdaptiveRingPresentation {
         guard isMeaningfullyDifferent(oldState, newState) else { return .none }
 
         switch (oldState, newState) {
-        case (.performance, .brightness), (.performance, .neutral):
-            return AdaptiveRingPresentationTransition(kind: .baselineRelease, duration: 0.60)
-        case (.brightness, .performance), (.neutral, .performance):
-            return AdaptiveRingPresentationTransition(kind: .performanceTakeover, duration: 0.50)
         case (.performance(let oldMetric, _), .performance(let newMetric, _)):
             if oldMetric == newMetric {
                 return AdaptiveRingPresentationTransition(kind: .performanceValueUpdate, duration: 0.40)
             }
             return AdaptiveRingPresentationTransition(kind: .performanceMetricChange, duration: 0.45)
-        case (.brightness, .brightness), (.brightness, .neutral), (.neutral, .brightness):
-            return AdaptiveRingPresentationTransition(kind: .baselineUpdate, duration: 0.40)
+        case (.performance, _):
+            return AdaptiveRingPresentationTransition(kind: .baselineRelease, duration: 0.60)
+        case (_, .performance):
+            return AdaptiveRingPresentationTransition(kind: .performanceTakeover, duration: 0.50)
         case (.neutral, .neutral):
             return .none
+        default:
+            return AdaptiveRingPresentationTransition(kind: .baselineUpdate, duration: 0.40)
         }
     }
 
@@ -159,7 +165,7 @@ enum AdaptiveRingPresentation {
         switch (oldState, newState) {
         case (.neutral, .neutral):
             return false
-        case (.brightness(let old), .brightness(let new)):
+        case (.brightness(let old), .brightness(let new)), (.volume(let old), .volume(let new)):
             return abs(old - new) >= valueTolerance
         case (.performance(let oldMetric, let old), .performance(let newMetric, let new)):
             return oldMetric != newMetric || abs(old - new) >= valueTolerance
@@ -189,6 +195,8 @@ enum AdaptiveRingDiagnosticFormatter {
             return "Neutral baseline · \(percentage(target.progress))"
         case .brightness:
             return "Brightness · \(percentage(target.progress))"
+        case .volume:
+            return "Volume · \(percentage(target.progress))"
         case .performance(let metric):
             return "\(metric.rawValue.capitalized) · \(percentage(target.progress))"
         }

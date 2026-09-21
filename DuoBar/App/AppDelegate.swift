@@ -21,7 +21,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             PreferenceKeys.animationsEnabled: true,
             PreferenceKeys.menuBarIconScale: MenuBarIconSize.defaultScale,
             PreferenceKeys.batteryColorCoding: false,
-            PreferenceKeys.openOnHover: false
+            PreferenceKeys.openOnHover: false,
+            PreferenceKeys.ringContent: RingContent.defaultValue.rawValue,
+            PreferenceKeys.ringPressureOverride: true
         ])
         super.init()
     }
