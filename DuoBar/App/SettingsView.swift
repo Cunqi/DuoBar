@@ -4,8 +4,6 @@ import SwiftUI
 enum SettingsPane: String, Hashable, Identifiable {
     case general
     case menuBar
-    case batteryRing
-    case adaptiveRing
     #if DEBUG
     case debugDiagnostics
     case debugGlyphTuning
@@ -16,9 +14,7 @@ enum SettingsPane: String, Hashable, Identifiable {
     var title: String {
         switch self {
         case .general: localized("General")
-        case .menuBar: localized("Menu Bar")
-        case .batteryRing: localized("Battery Ring")
-        case .adaptiveRing: localized("Adaptive Ring")
+        case .menuBar: localized("Menu Bar Icon")
         #if DEBUG
         case .debugDiagnostics: "Diagnostics"
         case .debugGlyphTuning: "Glyph Tuning"
@@ -30,8 +26,6 @@ enum SettingsPane: String, Hashable, Identifiable {
         switch self {
         case .general: "gearshape"
         case .menuBar: "menubar.rectangle"
-        case .batteryRing: "battery.100percent"
-        case .adaptiveRing: "gauge.medium"
         #if DEBUG
         case .debugDiagnostics: "stethoscope"
         case .debugGlyphTuning: "slider.horizontal.3"
@@ -60,14 +54,10 @@ struct SettingsView: View {
         .frame(width: 640, height: settingsHeight)
         .onAppear {
             NSApp.activate(ignoringOtherApps: true)
-            if showsAdaptiveRingSettings {
-                adaptiveRingMonitor.setPreference(adaptiveRingPriority)
-            }
+            adaptiveRingMonitor.setPreference(adaptiveRingPriority)
         }
         .onChange(of: adaptiveRingPriorityRaw) { _ in
-            if showsAdaptiveRingSettings {
-                adaptiveRingMonitor.setPreference(adaptiveRingPriority)
-            }
+            adaptiveRingMonitor.setPreference(adaptiveRingPriority)
         }
     }
 
@@ -75,9 +65,7 @@ struct SettingsView: View {
     private func detail(for pane: SettingsPane) -> some View {
         switch pane {
         case .general: GeneralSettingsPane()
-        case .menuBar: MenuBarSettingsPane()
-        case .batteryRing: BatteryRingSettingsPane()
-        case .adaptiveRing: AdaptiveRingSettingsPane()
+        case .menuBar: MenuBarSettingsPane(hasBattery: hasBattery)
         #if DEBUG
         case .debugDiagnostics: SettingsPaneForm { DebugPerformanceDiagnosticsView() }
         case .debugGlyphTuning: SettingsPaneForm { DebugDuoGlyphTuningView() }
@@ -87,12 +75,6 @@ struct SettingsView: View {
 
     private var visiblePanes: [SettingsPane] {
         var panes: [SettingsPane] = [.general, .menuBar]
-        if showsBatteryRingSettings {
-            panes.append(.batteryRing)
-        }
-        if showsAdaptiveRingSettings {
-            panes.append(.adaptiveRing)
-        }
         #if DEBUG
         if !MarketingCaptureMode.isEnabled {
             panes.append(contentsOf: [.debugDiagnostics, .debugGlyphTuning])
@@ -118,18 +100,7 @@ struct SettingsView: View {
         PerformancePreference(rawValue: adaptiveRingPriorityRaw) ?? .automatic
     }
 
-    private var showsAdaptiveRingSettings: Bool {
-        #if DEBUG
-        AdaptiveRingSettingsEligibility.isEligible(
-            for: deviceContextService.current(),
-            simulateDesktop: simulateDesktopMac
-        )
-        #else
-        AdaptiveRingSettingsEligibility.isEligible(for: deviceContextService.current())
-        #endif
-    }
-
-    private var showsBatteryRingSettings: Bool {
+    private var hasBattery: Bool {
         #if DEBUG
         deviceContextService.current(simulateDesktop: simulateDesktopMac).ringBehavior == .batteryRing
         #else
@@ -200,6 +171,7 @@ private struct SettingsPaneForm<Content: View>: View {
 
 private struct GeneralSettingsPane: View {
     @AppStorage(PreferenceKeys.openOnHover) private var openOnHover = false
+    @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
     @StateObject private var launchAtLogin = LaunchAtLoginService()
 
     var body: some View {
@@ -234,6 +206,10 @@ private struct GeneralSettingsPane: View {
                         .textSelection(.enabled)
                 }
             }
+
+            Section {
+                Toggle(localized("Show battery percentage in popover"), isOn: $showBatteryPercentage)
+            }
         }
         .onAppear {
             launchAtLogin.refresh()
@@ -242,18 +218,21 @@ private struct GeneralSettingsPane: View {
 }
 
 private struct MenuBarSettingsPane: View {
-    @AppStorage(PreferenceKeys.showBatteryPercentage) private var showBatteryPercentage = true
+    let hasBattery: Bool
+
     @AppStorage(PreferenceKeys.animationsEnabled) private var animationsEnabled = true
     @AppStorage(PreferenceKeys.menuBarIconScale) private var menuBarIconScale = MenuBarIconSize.defaultScale
+    @AppStorage(PreferenceKeys.ringContent) private var ringContentRaw = RingContent.defaultValue.rawValue
+    @AppStorage(PreferenceKeys.ringPressureOverride) private var ringPressureOverride = true
+    @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
+    @AppStorage(PreferenceKeys.adaptiveRingPriority) private var adaptiveRingPriorityRaw = PerformancePreference.automatic.rawValue
+    @AppStorage(PreferenceKeys.adaptiveRingColorCoding) private var adaptiveRingColorCoding = false
 
     var body: some View {
         SettingsPaneForm {
             Section {
-                Toggle(localized("Show battery percentage in popover"), isOn: $showBatteryPercentage)
                 Toggle(localized("Enable animations"), isOn: $animationsEnabled)
-            }
 
-            Section {
                 VStack(alignment: .leading, spacing: 6) {
                     Text(localized("Icon Size"))
                     HStack(spacing: 10) {
@@ -276,7 +255,60 @@ private struct MenuBarSettingsPane: View {
                         .foregroundStyle(.secondary)
                 }
             }
+
+            Section(localized("Outer Ring")) {
+                Picker(localized("Ring shows"), selection: ringContent) {
+                    ForEach(RingContent.options(hasBattery: hasBattery)) { content in
+                        Text(content.localizedDisplayName).tag(content)
+                    }
+                }
+
+                if resolvedRingContent.isFixedMetric {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Toggle(localized("Show high load alerts"), isOn: $ringPressureOverride)
+                        Text(localized("Sustained CPU, memory, or thermal pressure temporarily takes over the ring."))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if showsBatteryOptions {
+                    Toggle(localized("Battery Color Coding"), isOn: $batteryColorCoding)
+                }
+
+                if showsPressureOptions {
+                    Picker(localized("Adaptive Ring Priority"), selection: adaptiveRingPriority) {
+                        ForEach(PerformancePreference.allCases, id: \.self) { preference in
+                            Text(preference.localizedDisplayName).tag(preference)
+                        }
+                    }
+                    Text(localized("Used only when multiple system conditions need attention. Critical conditions can still take priority."))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Toggle(localized("Adaptive Ring Color Coding"), isOn: $adaptiveRingColorCoding)
+                }
+            }
         }
+    }
+
+    private var resolvedRingContent: RingContent {
+        let content = RingContent(rawValue: ringContentRaw) ?? .defaultValue
+        return RingContent.options(hasBattery: hasBattery).contains(content) ? content : .defaultValue
+    }
+
+    private var showsBatteryOptions: Bool {
+        hasBattery && !resolvedRingContent.isFixedMetric
+    }
+
+    private var showsPressureOptions: Bool {
+        resolvedRingContent.isFixedMetric ? ringPressureOverride : !hasBattery
+    }
+
+    private var ringContent: Binding<RingContent> {
+        Binding(
+            get: { resolvedRingContent },
+            set: { ringContentRaw = $0.rawValue }
+        )
     }
 
     private var resolvedMenuBarIconScale: Binding<Double> {
@@ -284,42 +316,6 @@ private struct MenuBarSettingsPane: View {
             get: { MenuBarIconSize.resolve(menuBarIconScale) },
             set: { menuBarIconScale = MenuBarIconSize.resolve($0) }
         )
-    }
-}
-
-private struct BatteryRingSettingsPane: View {
-    @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
-
-    var body: some View {
-        SettingsPaneForm {
-            Section {
-                Toggle(localized("Battery Color Coding"), isOn: $batteryColorCoding)
-            }
-        }
-    }
-}
-
-private struct AdaptiveRingSettingsPane: View {
-    @AppStorage(PreferenceKeys.adaptiveRingPriority) private var adaptiveRingPriorityRaw = PerformancePreference.automatic.rawValue
-    @AppStorage(PreferenceKeys.adaptiveRingColorCoding) private var adaptiveRingColorCoding = false
-
-    var body: some View {
-        SettingsPaneForm {
-            Section {
-                Picker(localized("Adaptive Ring Priority"), selection: adaptiveRingPriority) {
-                    ForEach(PerformancePreference.allCases, id: \.self) { preference in
-                        Text(preference.localizedDisplayName).tag(preference)
-                    }
-                }
-                Text(localized("Used only when multiple system conditions need attention. Critical conditions can still take priority."))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Section {
-                Toggle(localized("Adaptive Ring Color Coding"), isOn: $adaptiveRingColorCoding)
-            }
-        }
     }
 
     private var adaptiveRingPriority: Binding<PerformancePreference> {

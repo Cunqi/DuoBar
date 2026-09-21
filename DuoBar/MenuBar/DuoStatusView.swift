@@ -8,6 +8,8 @@ struct DuoStatusView: View {
     @AppStorage(PreferenceKeys.menuBarIconScale) private var menuBarIconScale = MenuBarIconSize.defaultScale
     @AppStorage(PreferenceKeys.batteryColorCoding) private var batteryColorCoding = false
     @AppStorage(PreferenceKeys.adaptiveRingColorCoding) private var adaptiveRingColorCoding = false
+    @AppStorage(PreferenceKeys.ringContent) private var ringContentRaw = RingContent.defaultValue.rawValue
+    @AppStorage(PreferenceKeys.ringPressureOverride) private var ringPressureOverride = true
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var adaptiveRingOwner = UUID()
     @State private var temporaryPerformanceMetric: PerformanceMetric?
@@ -54,7 +56,7 @@ struct DuoStatusView: View {
             ringPresentation: resolvedRingPresentation,
             centerStateOverride: performanceCenterState,
             ringTransitionAnimation: adaptiveRingAnimation,
-            usesCustomRingTransition: usesAdaptiveRing,
+            usesCustomRingTransition: showsAdaptiveRing,
             ringColorOverride: adaptiveRingColor,
             batteryColorCodingEnabled: batteryColorCoding
         )
@@ -66,7 +68,7 @@ struct DuoStatusView: View {
         .onChange(of: targetWidth) { newValue in onWidthChange(newValue) }
         .onAppear {
             lastPerformanceMetric = adaptiveRingMonitor.performanceDecision.activeMetric
-            if usesAdaptiveRing {
+            if needsMonitoring {
                 beginAdaptiveMonitoring(startFresh: usesLaptopAdaptiveRing)
             }
         }
@@ -74,9 +76,9 @@ struct DuoStatusView: View {
             adaptiveSessionIsSynchronized = false
             adaptiveRingMonitor.release(owner: adaptiveRingOwner)
         }
-        .onChange(of: usesAdaptiveRing) { isAdaptive in
+        .onChange(of: needsMonitoring) { isMonitoring in
             temporaryPerformanceMetric = nil
-            if isAdaptive {
+            if isMonitoring {
                 beginAdaptiveMonitoring(startFresh: usesLaptopAdaptiveRing)
             } else {
                 adaptiveSessionIsSynchronized = false
@@ -84,14 +86,14 @@ struct DuoStatusView: View {
                 adaptiveRingMonitor.release(owner: adaptiveRingOwner)
             }
         }
-        .onChange(of: adaptiveRingMonitor.state) { newState in
-            guard usesAdaptiveRing else { return }
+        .onChange(of: ringDisplay.adaptiveState) { newState in
+            guard let newState else { return }
             let transition = adaptiveRingPresentationState.retarget(to: newState)
             guard transition.kind != .none else { return }
             adaptiveRingTransition = transition
         }
         .onChange(of: adaptiveRingMonitor.performanceDecision.activeMetric) { newMetric in
-            guard usesAdaptiveRing else { return }
+            guard allowsPressureTakeover else { return }
             let oldMetric = lastPerformanceMetric ?? newMetric
             lastPerformanceMetric = newMetric
             temporaryPerformanceMetric = AdaptiveRingPresentation.metricToIdentify(
@@ -151,7 +153,7 @@ struct DuoStatusView: View {
     }
 
     private var resolvedRingPresentation: DuoPersistentRingPresentation {
-        let mode: DuoPersistentRingMode = usesAdaptiveRing ? .adaptive : .battery
+        let mode: DuoPersistentRingMode = showsAdaptiveRing ? .adaptive : .battery
         let adaptiveProgress = usesLaptopAdaptiveRing && !adaptiveSessionIsSynchronized
             ? AdaptiveRingVisualTarget.neutralBaseline
             : adaptiveRingPresentationState.displayedProgress
@@ -164,7 +166,7 @@ struct DuoStatusView: View {
     }
 
     private var adaptiveRingAnimation: Animation? {
-        guard usesAdaptiveRing else { return nil }
+        guard showsAdaptiveRing else { return nil }
         let duration = adaptiveRingTransition.effectiveDuration(
             animationsEnabled: animationsEnabled,
             reduceMotion: reduceMotion
@@ -175,17 +177,17 @@ struct DuoStatusView: View {
     }
 
     private var adaptiveRingColor: Color? {
-        guard usesAdaptiveRing else { return nil }
+        guard let state = ringDisplay.adaptiveState else { return nil }
         guard !usesLaptopAdaptiveRing || adaptiveSessionIsSynchronized else { return nil }
         return AdaptiveRingColorResolver.resolve(
-            state: adaptiveRingMonitor.state,
+            state: state,
             decision: adaptiveRingMonitor.performanceDecision,
             colorCodingEnabled: adaptiveRingColorCoding
         ).color
     }
 
     private var performanceCenterState: DuoCenterState? {
-        guard usesAdaptiveRing, priorityController.presentation.event == nil else { return nil }
+        guard showsAdaptiveRing, allowsPressureTakeover, priorityController.presentation.event == nil else { return nil }
         guard !usesLaptopAdaptiveRing || adaptiveSessionIsSynchronized else { return nil }
         switch temporaryPerformanceMetric {
         case .cpu: return .performanceCPU
@@ -195,11 +197,38 @@ struct DuoStatusView: View {
         }
     }
 
-    private var usesAdaptiveRing: Bool {
+    private var isDesktopRing: Bool {
         #if DEBUG
         if simulateDesktopMac { return true }
         #endif
         return statusStore.usesReleasedAdaptiveRing
+    }
+
+    private var ringContent: RingContent {
+        RingContent(rawValue: ringContentRaw) ?? .defaultValue
+    }
+
+    private var ringDisplay: RingDisplay {
+        RingContentResolver.resolve(
+            content: ringContent,
+            inputs: adaptiveRingMonitor.ringInputs(
+                hasBattery: !isDesktopRing,
+                allowsPressureOverride: ringPressureOverride,
+                volume: statusStore.status.audio.volume
+            )
+        )
+    }
+
+    private var showsAdaptiveRing: Bool {
+        ringDisplay.adaptiveState != nil
+    }
+
+    private var needsMonitoring: Bool {
+        RingContentResolver.needsMonitoring(content: ringContent, hasBattery: !isDesktopRing)
+    }
+
+    private var allowsPressureTakeover: Bool {
+        ringContent.isFixedMetric ? ringPressureOverride : isDesktopRing
     }
 
     private var usesLaptopAdaptiveRing: Bool {
@@ -214,7 +243,7 @@ struct DuoStatusView: View {
             adaptiveRingMonitor.resetForNewMonitoringSession()
         }
         adaptiveRingMonitor.acquire(owner: adaptiveRingOwner)
-        adaptiveRingPresentationState.synchronize(to: adaptiveRingMonitor.state)
+        adaptiveRingPresentationState.synchronize(to: ringDisplay.adaptiveState ?? adaptiveRingMonitor.state)
         adaptiveSessionIsSynchronized = true
         adaptiveRingTransition = startFresh
             ? AdaptiveRingPresentationTransition(kind: .performanceTakeover, duration: 0.50)
