@@ -5,6 +5,9 @@ build/
 *.dSYM
 *.xcuserstate
 xcuserdata/
+**/.build/
+**/.swiftpm/
+.semina/
 
 # Upload these from the local release folder as GitHub Release assets;
 # do not commit generated binaries to source history.

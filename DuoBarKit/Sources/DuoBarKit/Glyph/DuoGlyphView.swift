@@ -1,0 +1,838 @@
+import AppKit
+import SwiftUI
+
+enum BatteryBoltPresentationConstants {
+    static let opacity = BatteryChargingAnimationProfile.boltOpacity
+    static let hiddenScale: CGFloat = 0
+    static let entranceDuration = BatteryChargingAnimationProfile.boltEntranceDuration
+    static let exitDuration = BatteryChargingAnimationProfile.exitDuration
+}
+
+enum DuoNativeVisualConstants {
+    static let inactiveElementOpacity = 0.28
+    static let unknownElementOpacity = 0.28
+    static let chargingColorDelay = BatteryChargingAnimationProfile.colorDelay
+    static let chargingColorTransitionDuration = BatteryChargingAnimationProfile.colorTransitionDuration
+    static let chargingTrackOpacity = BatteryChargingAnimationProfile.inactiveTrackOpacity
+}
+
+public struct DuoGlyphView: View {
+    let state: GlyphRenderState
+    var metrics: DuoGlyphMetrics
+    var animationsEnabled: Bool
+    var ringTransitionAnimation: Animation?
+    var usesCustomRingTransition: Bool
+    var ringColorOverride: Color?
+    var chargingBoltProgressOverride: CGFloat?
+    var chargingTrackProgressOverride: CGFloat?
+    var chargingColorMixOverride: CGFloat?
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var centerPulseScale: CGFloat = 1
+    @State private var chargingBoltProgress: CGFloat
+    @State private var chargingTrackProgress: CGFloat
+    @State private var chargingColorMix: CGFloat
+
+    public init(
+        state: GlyphRenderState,
+        metrics: DuoGlyphMetrics = .standard,
+        animationsEnabled: Bool = true,
+        ringTransitionAnimation: Animation? = nil,
+        usesCustomRingTransition: Bool = false,
+        ringColorOverride: Color? = nil,
+        chargingBoltProgressOverride: CGFloat? = nil,
+        chargingTrackProgressOverride: CGFloat? = nil,
+        chargingColorMixOverride: CGFloat? = nil
+    ) {
+        self.state = state
+        self.metrics = metrics
+        self.animationsEnabled = animationsEnabled
+        self.ringTransitionAnimation = ringTransitionAnimation
+        self.usesCustomRingTransition = usesCustomRingTransition
+        self.ringColorOverride = ringColorOverride
+        self.chargingBoltProgressOverride = chargingBoltProgressOverride
+        self.chargingTrackProgressOverride = chargingTrackProgressOverride
+        self.chargingColorMixOverride = chargingColorMixOverride
+
+        let usesPowerPresentation = state.batteryPresentation.boltPlacement != .none
+        _chargingBoltProgress = State(initialValue: usesPowerPresentation ? 1 : 0)
+        _chargingTrackProgress = State(initialValue: usesPowerPresentation ? 1 : 0)
+        _chargingColorMix = State(initialValue: state.batteryPresentation.colorRole == .charging ? 1 : 0)
+    }
+
+    private var glyphState: GlyphRenderState {
+        state
+    }
+
+    public var body: some View {
+        ZStack {
+            if glyphState.ringPresentation.mode == .adaptive {
+                DuoArcShape(
+                    startDegrees: metrics.arcStartDegrees,
+                    endDegrees: metrics.arcEndDegrees,
+                    progress: CGFloat(glyphState.batteryProgress)
+                )
+                .stroke(arcColor, style: ringStrokeStyle)
+                .frame(width: metrics.ringPathDiameter, height: metrics.ringPathDiameter)
+                .offset(y: metrics.ringYOffset)
+                .opacity(glyphState.batteryArcOpacity)
+                .animation(arcAnimation, value: glyphState.batteryProgress)
+                .animation(arcOpacityAnimation, value: glyphState.batteryArcOpacity)
+            } else {
+                DuoArcShape(
+                    startDegrees: metrics.arcStartDegrees,
+                    endDegrees: metrics.arcEndDegrees,
+                    progress: 1
+                )
+                .stroke(arcColor, style: ringStrokeStyle)
+                .frame(width: metrics.ringPathDiameter, height: metrics.ringPathDiameter)
+                .offset(y: metrics.ringYOffset)
+                .opacity(
+                    glyphState.batteryArcOpacity
+                        * DuoNativeVisualConstants.chargingTrackOpacity
+                        * effectiveChargingTrackProgress
+                )
+
+                DuoArcShape(
+                    startDegrees: metrics.arcStartDegrees,
+                    endDegrees: metrics.arcEndDegrees,
+                    progress: CGFloat(glyphState.batteryProgress)
+                )
+                .stroke(arcColor, style: ringStrokeStyle)
+                .frame(width: metrics.ringPathDiameter, height: metrics.ringPathDiameter)
+                .offset(y: metrics.ringYOffset)
+                .opacity(glyphState.batteryArcOpacity)
+                .animation(arcAnimation, value: glyphState.batteryProgress)
+                .animation(arcOpacityAnimation, value: glyphState.batteryArcOpacity)
+            }
+
+            DuoChargingBolt(
+                progress: effectiveChargingBoltProgress,
+                size: chargingBoltSize,
+                offset: chargingBoltOffset,
+                color: .primary,
+                opacity: chargingBoltOpacity
+            )
+
+            DuoCenterTransitionView(
+                targetState: glyphState.centerState,
+                size: metrics.wifiSymbolSize,
+                ringDiameter: metrics.ringDiameter,
+                ringYOffset: metrics.ringYOffset,
+                centerYOffset: metrics.wifiYOffset,
+                pulseScale: centerPulseScale,
+                animationsEnabled: animationsEnabled,
+                reduceMotion: reduceMotion
+            )
+            .offset(y: metrics.wifiYOffset)
+
+            DuoDotRow(
+                activeCount: glyphState.volumeActiveDotCount,
+                diameter: metrics.dotDiameter,
+                ringDiameter: metrics.ringDiameter,
+                rowCenterYOffset: metrics.dotYOffset,
+                animationsEnabled: motionAllowed
+            )
+        }
+        .frame(width: DuoGlyphMetrics.canvasSize, height: DuoGlyphMetrics.canvasSize)
+        .scaleEffect(metrics.overallSize / DuoGlyphMetrics.canvasSize)
+        .frame(width: metrics.overallSize, height: metrics.overallSize)
+        .accessibilityHidden(true)
+        .task(id: glyphState.audioEventID) {
+            centerPulseScale = 1
+            guard glyphState.audioEventID != nil, motionAllowed else { return }
+            try? await Task.sleep(for: .milliseconds(260))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.1)) {
+                centerPulseScale = 1.055
+            }
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled else {
+                centerPulseScale = 1
+                return
+            }
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.9)) {
+                centerPulseScale = 1
+            }
+        }
+        .onChange(of: chargingPresentationTarget) { target in
+            let showing = target > 0
+            if chargingBoltProgressOverride == nil {
+                withAnimation(boltAnimation(showing: showing)) {
+                    chargingBoltProgress = target
+                }
+            }
+            if chargingTrackProgressOverride == nil {
+                withAnimation(trackAnimation(showing: showing)) {
+                    chargingTrackProgress = target
+                }
+            }
+        }
+        .task(id: chargingColorTarget) {
+            guard chargingColorMixOverride == nil else { return }
+            guard chargingColorMix != chargingColorTarget else { return }
+            guard motionAllowed else {
+                chargingColorMix = chargingColorTarget
+                return
+            }
+
+            if chargingColorTarget > 0 {
+                try? await Task.sleep(for: .seconds(DuoNativeVisualConstants.chargingColorDelay))
+                guard !Task.isCancelled else { return }
+            }
+            withAnimation(chargingColorAnimation(showing: chargingColorTarget > 0)) {
+                chargingColorMix = chargingColorTarget
+            }
+        }
+    }
+
+    private var motionAllowed: Bool {
+        animationsEnabled && !reduceMotion
+    }
+
+    private var ringStrokeStyle: StrokeStyle {
+        StrokeStyle(
+            lineWidth: metrics.arcLineWidth,
+            lineCap: .round,
+            lineJoin: .round
+        )
+    }
+
+    private var arcColor: Color {
+        if glyphState.ringPresentation.mode == .adaptive {
+            return ringColorOverride ?? .primary
+        }
+
+        if effectiveChargingColorMix > 0 {
+            let base = nsColor(for: nonChargingBatteryColorRole)
+            let mixed = base.blended(
+                withFraction: effectiveChargingColorMix,
+                of: .systemGreen
+            ) ?? .systemGreen
+            return Color(nsColor: mixed)
+        }
+
+        switch glyphState.batteryPresentation.colorRole {
+        case .charging: return Color(nsColor: nsColor(for: nonChargingBatteryColorRole))
+        case .lowPowerMode: return Color(nsColor: .systemYellow)
+        case .lowBattery: return Color(nsColor: .systemRed)
+        case .monochrome: break
+        }
+
+        switch glyphState.feedback {
+        case .charging, .lowBattery: return .primary
+        case .none, .audioConnected: return ringColorOverride ?? .primary
+        }
+    }
+
+    private var arcAnimation: Animation? {
+        guard motionAllowed else { return nil }
+        if usesCustomRingTransition { return ringTransitionAnimation }
+        return layerAnimation
+    }
+
+    private var arcOpacityAnimation: Animation? {
+        guard motionAllowed else { return nil }
+        return usesCustomRingTransition ? ringTransitionAnimation : layerAnimation
+    }
+
+    private var layerAnimation: Animation? {
+        motionAllowed ? AnimationConstants.content : nil
+    }
+
+    private var chargingBoltOffset: CGSize {
+        let point: CGPoint
+        switch glyphState.batteryPresentation.boltPlacement {
+        case .topGap:
+            point = DuoRingGeometry.chargingBoltPoint(metrics: metrics)
+        case .none:
+            point = .zero
+        }
+        return CGSize(
+            width: point.x,
+            height: point.y
+        )
+    }
+
+    private var chargingBoltSize: CGFloat {
+        metrics.ringDiameter * BatteryChargingAnimationProfile.boltFontSizeRatio
+    }
+
+    private var chargingBoltOpacity: Double {
+        BatteryBoltPresentationConstants.opacity
+    }
+
+    private var chargingPresentationTarget: CGFloat {
+        glyphState.batteryPresentation.boltPlacement == .none ? 0 : 1
+    }
+
+    private var chargingColorTarget: CGFloat {
+        glyphState.batteryPresentation.colorRole == .charging ? 1 : 0
+    }
+
+    private var effectiveChargingBoltProgress: CGFloat {
+        guard glyphState.ringPresentation.mode == .battery else { return 0 }
+        return chargingBoltProgressOverride ?? chargingBoltProgress
+    }
+
+    private var effectiveChargingTrackProgress: Double {
+        guard glyphState.ringPresentation.mode == .battery else { return 0 }
+        return Double(chargingTrackProgressOverride ?? chargingTrackProgress)
+    }
+
+    private var effectiveChargingColorMix: CGFloat {
+        chargingColorMixOverride ?? chargingColorMix
+    }
+
+    private var nonChargingBatteryColorRole: GlyphBatteryColorRole {
+        state.nonChargingBatteryColorRole
+    }
+
+    private func nsColor(for role: GlyphBatteryColorRole) -> NSColor {
+        switch role {
+        case .charging: return .systemGreen
+        case .lowPowerMode: return .systemYellow
+        case .lowBattery: return .systemRed
+        case .monochrome: return .labelColor
+        }
+    }
+
+    private func boltAnimation(showing: Bool) -> Animation? {
+        guard motionAllowed else { return nil }
+        if showing {
+            return .timingCurve(
+                0.33, 1, 0.68, 1,
+                duration: BatteryBoltPresentationConstants.entranceDuration
+            )
+        }
+        return .timingCurve(0.4, 0, 0.2, 1, duration: BatteryBoltPresentationConstants.exitDuration)
+    }
+
+    private func trackAnimation(showing: Bool) -> Animation? {
+        guard motionAllowed else { return nil }
+        let duration = showing
+            ? BatteryChargingAnimationProfile.trackEntranceDuration
+            : BatteryChargingAnimationProfile.exitDuration
+        return .timingCurve(0.4, 0, 0.2, 1, duration: duration)
+    }
+
+    private func chargingColorAnimation(showing: Bool) -> Animation? {
+        guard motionAllowed else { return nil }
+        let duration = showing
+            ? DuoNativeVisualConstants.chargingColorTransitionDuration
+            : BatteryChargingAnimationProfile.exitDuration
+        if showing {
+            return .timingCurve(0.33, 1, 0.68, 1, duration: duration)
+        }
+        return .timingCurve(0.4, 0, 0.2, 1, duration: duration)
+    }
+}
+
+enum DuoRingGeometry {
+    static func endDegrees(startDegrees: Double, endDegrees: Double, progress: Double) -> Double {
+        let clampedProgress = min(max(progress, 0), 1)
+        return startDegrees + (endDegrees - startDegrees) * clampedProgress
+    }
+
+    static func endpoint(
+        metrics: DuoGlyphMetrics,
+        progress: Double,
+        radialOffset: CGFloat = 0
+    ) -> CGPoint {
+        let degrees = endDegrees(
+            startDegrees: metrics.arcStartDegrees,
+            endDegrees: metrics.arcEndDegrees,
+            progress: progress
+        )
+        let radians = degrees * .pi / 180
+        let radius = metrics.ringPathDiameter / 2 + radialOffset
+        return CGPoint(
+            x: CGFloat(cos(radians)) * radius,
+            y: CGFloat(sin(radians)) * radius + metrics.ringYOffset
+        )
+    }
+
+    static func midpoint(metrics: DuoGlyphMetrics, radialOffset: CGFloat = 0) -> CGPoint {
+        endpoint(metrics: metrics, progress: 0.5, radialOffset: radialOffset)
+    }
+
+    static func chargingBoltPoint(metrics: DuoGlyphMetrics) -> CGPoint {
+        let point = midpoint(
+            metrics: metrics,
+            radialOffset: metrics.ringDiameter * BatteryChargingAnimationProfile.boltRadialOffsetRatio
+        )
+        return CGPoint(
+            x: point.x + metrics.ringDiameter * BatteryChargingAnimationProfile.boltHorizontalOffsetRatio,
+            y: point.y
+        )
+    }
+}
+
+struct DuoCenterTransitionView: View {
+    let targetState: GlyphCenterState
+    let size: CGFloat
+    let ringDiameter: CGFloat
+    let ringYOffset: CGFloat
+    let centerYOffset: CGFloat
+    let pulseScale: CGFloat
+    let animationsEnabled: Bool
+    let reduceMotion: Bool
+
+    @State private var displayedState: GlyphCenterState
+    @State private var outgoingState: GlyphCenterState?
+    @State private var transitionProgress: CGFloat = 1
+
+    init(
+        targetState: GlyphCenterState,
+        size: CGFloat,
+        ringDiameter: CGFloat,
+        ringYOffset: CGFloat,
+        centerYOffset: CGFloat,
+        pulseScale: CGFloat,
+        animationsEnabled: Bool,
+        reduceMotion: Bool
+    ) {
+        self.targetState = targetState
+        self.size = size
+        self.ringDiameter = ringDiameter
+        self.ringYOffset = ringYOffset
+        self.centerYOffset = centerYOffset
+        self.pulseScale = pulseScale
+        self.animationsEnabled = animationsEnabled
+        self.reduceMotion = reduceMotion
+        _displayedState = State(initialValue: targetState)
+    }
+
+    var body: some View {
+        DuoCenterTransitionLayer(
+            outgoingState: outgoingState,
+            incomingState: displayedState,
+            progress: transitionProgress,
+            pulseScale: pulseScale,
+            size: size,
+            ringDiameter: ringDiameter,
+            wifiVerticalAdjustment: DuoWiFiReferenceGeometry.verticalAdjustment(
+                ringDiameter: ringDiameter,
+                ringYOffset: ringYOffset,
+                centerYOffset: centerYOffset
+            ),
+            usesSpatialMotion: !reduceMotion
+        )
+        .onChange(of: targetState) { newState in
+            transition(to: newState)
+        }
+        .task(id: targetState) {
+            try? await Task.sleep(for: .milliseconds(270))
+            guard !Task.isCancelled else { return }
+            outgoingState = nil
+        }
+    }
+
+    private func transition(to newState: GlyphCenterState) {
+        guard newState != displayedState else { return }
+        guard animationsEnabled else {
+            outgoingState = nil
+            displayedState = newState
+            transitionProgress = 1
+            return
+        }
+
+        outgoingState = displayedState
+        displayedState = newState
+        transitionProgress = 0
+        withAnimation(.easeInOut(duration: 0.25)) {
+            transitionProgress = 1
+        }
+    }
+}
+
+struct DuoCenterTransitionLayer: View {
+    let outgoingState: GlyphCenterState?
+    let incomingState: GlyphCenterState
+    let progress: CGFloat
+    let pulseScale: CGFloat
+    let size: CGFloat
+    let ringDiameter: CGFloat
+    let wifiVerticalAdjustment: CGFloat
+    let usesSpatialMotion: Bool
+
+    init(
+        outgoingState: GlyphCenterState?,
+        incomingState: GlyphCenterState,
+        progress: CGFloat,
+        pulseScale: CGFloat,
+        size: CGFloat,
+        ringDiameter: CGFloat = DuoGlyphMetrics.standard.ringDiameter,
+        wifiVerticalAdjustment: CGFloat = DuoWiFiReferenceGeometry.verticalAdjustment(
+            ringDiameter: DuoGlyphMetrics.standard.ringDiameter,
+            ringYOffset: DuoGlyphMetrics.standard.ringYOffset,
+            centerYOffset: DuoGlyphMetrics.standard.wifiYOffset
+        ),
+        usesSpatialMotion: Bool
+    ) {
+        self.outgoingState = outgoingState
+        self.incomingState = incomingState
+        self.progress = progress
+        self.pulseScale = pulseScale
+        self.size = size
+        self.ringDiameter = ringDiameter
+        self.wifiVerticalAdjustment = wifiVerticalAdjustment
+        self.usesSpatialMotion = usesSpatialMotion
+    }
+
+    var body: some View {
+        ZStack {
+            if let outgoingState {
+                DuoCenterGlyph(
+                    state: outgoingState,
+                    size: size,
+                    ringDiameter: ringDiameter,
+                    wifiVerticalAdjustment: wifiVerticalAdjustment
+                )
+                    .opacity(1 - progress)
+                    .scaleEffect(usesSpatialMotion ? 1 - (0.1 * progress) : 1)
+                    .offset(
+                        x: usesSpatialMotion ? -travelDistance * progress : 0,
+                        y: usesSpatialMotion ? -travelDistance * progress : 0
+                    )
+            }
+
+            DuoCenterGlyph(
+                state: incomingState,
+                size: size,
+                ringDiameter: ringDiameter,
+                wifiVerticalAdjustment: wifiVerticalAdjustment
+            )
+                .opacity(progress)
+                .scaleEffect((usesSpatialMotion ? 0.9 + (0.1 * progress) : 1) * incomingPulseScale)
+                .offset(
+                    x: usesSpatialMotion ? travelDistance * (1 - progress) : 0,
+                    y: usesSpatialMotion ? travelDistance * (1 - progress) : 0
+                )
+        }
+        .frame(width: size * 1.65, height: size * 1.4)
+    }
+
+    private var incomingPulseScale: CGFloat {
+        incomingState.isTemporaryAudioState ? pulseScale : 1
+    }
+
+    // The standard glyph is scaled from a 32 pt design canvas to 24 pt in the menu bar.
+    // This produces an effective two-point displacement at the installed size.
+    private var travelDistance: CGFloat {
+        size * 0.215
+    }
+}
+
+struct DuoArcShape: Shape {
+    let startDegrees: Double
+    let endDegrees: Double
+    var progress: CGFloat
+
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    var visibleEndDegrees: Double {
+        DuoRingGeometry.endDegrees(
+            startDegrees: startDegrees,
+            endDegrees: endDegrees,
+            progress: Double(progress)
+        )
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let clampedProgress = min(max(progress, 0), 1)
+        guard clampedProgress > 0 else { return Path() }
+
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = min(rect.width, rect.height) / 2
+        let sampleCount = 72
+
+        var path = Path()
+        for index in 0...sampleCount {
+            let sampleProgress = Double(index) / Double(sampleCount)
+            let degrees = startDegrees + (visibleEndDegrees - startDegrees) * sampleProgress
+            let radians = degrees * .pi / 180
+            let point = CGPoint(
+                x: center.x + CGFloat(cos(radians)) * radius,
+                y: center.y + CGFloat(sin(radians)) * radius
+            )
+
+            if index == 0 {
+                path.move(to: point)
+            } else {
+                path.addLine(to: point)
+            }
+        }
+        return path
+    }
+}
+
+struct DuoCenterGlyph: View {
+    let state: GlyphCenterState
+    let size: CGFloat
+    let ringDiameter: CGFloat
+    let wifiVerticalAdjustment: CGFloat
+
+    var body: some View {
+        Group {
+            if case let .wifi(level) = state {
+                DuoWiFiGlyph(
+                    level: level,
+                    ringDiameter: ringDiameter,
+                    verticalAdjustment: wifiVerticalAdjustment
+                )
+            } else {
+                Image(systemName: symbolName)
+                    .font(.system(size: symbolSize, weight: .semibold))
+                    .symbolRenderingMode(.monochrome)
+            }
+        }
+        .foregroundStyle(glyphColor)
+        .opacity(symbolOpacity)
+        .frame(width: size * 1.65, height: size * 1.4)
+    }
+
+    private var symbolName: String {
+        switch state {
+        case .wifi: "wifi"
+        case .ethernet: "cable.connector.horizontal"
+        case .offline: "network.slash"
+        case .other: "ellipsis.circle"
+        case .unavailable: "network.slash"
+        case .airPodsPro: "airpodspro"
+        case .airPodsMax: "airpodsmax"
+        case .airPods: "airpods"
+        case .headphones: "headphones"
+        case .audioDevice: "speaker.wave.2"
+        case .performanceCPU: "cpu"
+        case .performanceMemory: "memorychip"
+        case .performanceThermal: "thermometer.medium"
+        }
+    }
+
+    private var symbolSize: CGFloat {
+        switch state {
+        case .ethernet, .other, .airPodsPro, .airPodsMax, .airPods, .headphones, .audioDevice,
+             .performanceCPU, .performanceMemory, .performanceThermal:
+            size * 0.92
+        case .wifi, .offline, .unavailable: size
+        }
+    }
+
+    private var symbolOpacity: Double {
+        state == .unavailable ? 0.34 : 1
+    }
+
+    private var glyphColor: Color {
+        state.isTemporaryAudioState ? .accentColor.opacity(0.86) : .primary
+    }
+}
+
+enum DuoWiFiVisualStyle {
+    enum Band: Int, CaseIterable {
+        case core
+        case middle
+        case outer
+    }
+
+    static func opacity(for band: Band, level: GlyphWiFiSignalLevel) -> Double {
+        let activeBandCount: Int
+        switch level {
+        case .strong: activeBandCount = 3
+        case .medium: activeBandCount = 2
+        case .weak: activeBandCount = 1
+        case .disconnected, .disabled, .unavailable: activeBandCount = 0
+        }
+        return band.rawValue < activeBandCount ? 1 : DuoNativeVisualConstants.inactiveElementOpacity
+    }
+}
+
+enum DuoWiFiReferenceGeometry {
+    // Measurements from the unobscured strong-Wi-Fi frame at 27.00 seconds.
+    // All production geometry is normalized to the 230 px reference outer-ring diameter.
+    static let referenceRingDiameter: CGFloat = 230
+    static let totalWidthRatio: CGFloat = 100 / referenceRingDiameter
+    static let totalHeightRatio: CGFloat = 73 / referenceRingDiameter
+    static let outerArcWidthRatio: CGFloat = 100 / referenceRingDiameter
+    static let outerArcHeightRatio: CGFloat = 31 / referenceRingDiameter
+    static let innerArcWidthRatio: CGFloat = 64 / referenceRingDiameter
+    static let innerArcHeightRatio: CGFloat = 23 / referenceRingDiameter
+    static let strokeWidthRatio: CGFloat = 14.5 / referenceRingDiameter
+    static let referenceRingStrokeRatio: CGFloat = 18 / referenceRingDiameter
+    static let coreWidthRatio: CGFloat = 29 / referenceRingDiameter
+    static let coreHeightRatio: CGFloat = 21 / referenceRingDiameter
+    static let outerToInnerCenterGapRatio: CGFloat = 11 / referenceRingDiameter
+    static let innerToCoreCenterGapRatio: CGFloat = 12 / referenceRingDiameter
+    static let opticalCenterYOffsetRatio: CGFloat = -15 / referenceRingDiameter
+
+    static func verticalAdjustment(
+        ringDiameter: CGFloat,
+        ringYOffset: CGFloat,
+        centerYOffset: CGFloat
+    ) -> CGFloat {
+        ringYOffset + ringDiameter * opticalCenterYOffsetRatio - centerYOffset
+    }
+}
+
+struct DuoWiFiGlyph: View {
+    let level: GlyphWiFiSignalLevel
+    let ringDiameter: CGFloat
+    let verticalAdjustment: CGFloat
+
+    var body: some View {
+        let width = ringDiameter * DuoWiFiReferenceGeometry.totalWidthRatio
+        let height = ringDiameter * DuoWiFiReferenceGeometry.totalHeightRatio
+        let lineWidth = ringDiameter * DuoWiFiReferenceGeometry.strokeWidthRatio
+        ZStack {
+            DuoWiFiArcShape(kind: .outer)
+                .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+                .opacity(DuoWiFiVisualStyle.opacity(for: .outer, level: level))
+            DuoWiFiArcShape(kind: .middle)
+                .stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+                .opacity(DuoWiFiVisualStyle.opacity(for: .middle, level: level))
+            DuoWiFiCoreShape()
+                .fill()
+                .opacity(DuoWiFiVisualStyle.opacity(for: .core, level: level))
+        }
+        .frame(width: width, height: height)
+        .offset(y: verticalAdjustment)
+    }
+}
+
+private struct DuoWiFiArcShape: Shape {
+    enum Kind {
+        case outer
+        case middle
+    }
+
+    let kind: Kind
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        switch kind {
+        case .outer:
+            path.move(to: CGPoint(x: rect.width * 0.075, y: rect.height * 0.321918))
+            path.addQuadCurve(
+                to: CGPoint(x: rect.width * 0.915, y: rect.height * 0.321918),
+                control: CGPoint(x: rect.width * 0.495, y: rect.height * -0.130137)
+            )
+        case .middle:
+            path.move(to: CGPoint(x: rect.width * 0.25, y: rect.height * 0.568493))
+            path.addQuadCurve(
+                to: CGPoint(x: rect.width * 0.74, y: rect.height * 0.568493),
+                control: CGPoint(x: rect.width * 0.495, y: rect.height * 0.321918)
+            )
+        }
+        return path
+    }
+}
+
+private struct DuoWiFiCoreShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.width * 0.365, y: rect.height * 0.815068))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.width * 0.635, y: rect.height * 0.815068),
+            control: CGPoint(x: rect.width * 0.5, y: rect.height * 0.650685)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.5, y: rect.height * 0.993151),
+            control1: CGPoint(x: rect.width * 0.635, y: rect.height * 0.883562),
+            control2: CGPoint(x: rect.width * 0.555, y: rect.height * 0.993151)
+        )
+        path.addCurve(
+            to: CGPoint(x: rect.width * 0.365, y: rect.height * 0.815068),
+            control1: CGPoint(x: rect.width * 0.445, y: rect.height * 0.993151),
+            control2: CGPoint(x: rect.width * 0.365, y: rect.height * 0.883562)
+        )
+        return path
+    }
+}
+
+private extension GlyphCenterState {
+    var isTemporaryAudioState: Bool {
+        switch self {
+        case .airPodsPro, .airPodsMax, .airPods, .headphones, .audioDevice: true
+        case .wifi, .ethernet, .offline, .other, .unavailable,
+             .performanceCPU, .performanceMemory, .performanceThermal:
+            false
+        }
+    }
+}
+
+struct DuoDotRow: View {
+    let activeCount: Int?
+    let diameter: CGFloat
+    let ringDiameter: CGFloat
+    let rowCenterYOffset: CGFloat
+    let animationsEnabled: Bool
+
+    var body: some View {
+        ZStack {
+            ForEach(0..<4, id: \.self) { index in
+                Circle()
+                    .frame(width: diameter, height: diameter)
+                    .opacity(opacity(for: index))
+                    .offset(
+                        x: ringDiameter * DuoVolumeIndicatorGeometry.centerXOffsets[index],
+                        y: rowCenterYOffset
+                            + ringDiameter * DuoVolumeIndicatorGeometry.centerYOffsets[index]
+                    )
+            }
+        }
+        .frame(width: ringDiameter, height: ringDiameter)
+        .foregroundStyle(.primary)
+        .animation(animationsEnabled ? AnimationConstants.content : nil, value: activeCount)
+    }
+
+    func opacity(for index: Int) -> Double {
+        guard let activeCount else { return DuoVolumeIndicatorGeometry.unknownOpacity }
+        return index < activeCount
+            ? DuoVolumeIndicatorGeometry.activeOpacity
+            : DuoVolumeIndicatorGeometry.inactiveOpacity
+    }
+}
+
+enum DuoVolumeIndicatorGeometry {
+    // Measurements from the stable all-active frame at 27.00 seconds,
+    // normalized to the 230 px reference outer-ring diameter.
+    static let referenceRingDiameter: CGFloat = 230
+    static let indicatorDiameterRatio: CGFloat = 21.5 / referenceRingDiameter
+    static let rowWidthRatio: CGFloat = 132 / referenceRingDiameter
+    static let rowHeightRatio: CGFloat = 35 / referenceRingDiameter
+    static let outerEdgeGapRatio: CGFloat = 14.25 / referenceRingDiameter
+    static let innerEdgeGapRatio: CGFloat = 17.5 / referenceRingDiameter
+    static let wifiToRowGapRatio: CGFloat = 33.25 / referenceRingDiameter
+    static let rowToRingBottomGapRatio: CGFloat = 25.75 / referenceRingDiameter
+    static let centerXOffsets: [CGFloat] = [-55.25, -19.5, 19.5, 55.25]
+        .map { $0 / referenceRingDiameter }
+    static let centerYOffsets: [CGFloat] = [-6.5, 6.5, 6.5, -6.5]
+        .map { $0 / referenceRingDiameter }
+    static let activeOpacity = 1.0
+    static let inactiveOpacity = 0.30
+    static let unknownOpacity = 0.30
+}
+
+private struct DuoChargingBolt: View {
+    let progress: CGFloat
+    let size: CGFloat
+    let offset: CGSize
+    let color: Color
+    let opacity: Double
+
+    var body: some View {
+        Image(systemName: "bolt.fill")
+            .font(.system(size: size, weight: .bold))
+            .symbolRenderingMode(.monochrome)
+            .foregroundStyle(color)
+            .offset(offset)
+            .opacity(opacity * Double(progress))
+            .scaleEffect(
+                BatteryBoltPresentationConstants.hiddenScale
+                    + (1 - BatteryBoltPresentationConstants.hiddenScale) * progress
+            )
+    }
+}

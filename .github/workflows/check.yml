@@ -1,0 +1,27 @@
+name: 验证模块边界与现有行为
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: 包边界、测试与构建
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: 读取源码
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - name: 检查模块边界
+        run: ./scripts/lint.sh
+      - name: 验证现有行为
+        run: ./scripts/acceptance-tests.sh
+      - name: 构建正式配置
+        run: ./scripts/build.sh Release
+      - name: 构建诊断工具
+        run: ./scripts/build-diagnostic.sh
