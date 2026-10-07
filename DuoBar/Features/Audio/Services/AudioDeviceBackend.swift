@@ -35,6 +35,7 @@ final class AudioDeviceObservation {
 }
 
 protocol AudioDeviceBackend: AnyObject {
+    func notificationBoundary() -> UInt64
     func devices() -> [AudioDeviceDescriptor]
     func defaultDevice(direction: AudioDeviceDirection) -> AudioDeviceID?
     func setDefaultDevice(_ deviceID: AudioDeviceID, direction: AudioDeviceDirection) -> OSStatus
@@ -42,13 +43,36 @@ protocol AudioDeviceBackend: AnyObject {
     func inputVolume(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement) -> Float32?
     func inputVolumeIsSettable(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement) -> Bool
     func setInputVolume(_ value: Float32, deviceID: AudioDeviceID, channel: AudioObjectPropertyElement) -> OSStatus
-    func observeSystem(_ property: AudioDeviceSystemProperty, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation?
-    func observeInputVolume(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation?
+    func observeSystem(_ property: AudioDeviceSystemProperty, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation?
+    func observeInputVolume(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation?
+}
+
+private final class AudioDeviceNotificationSequence: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: UInt64 = 0
+
+    var current: UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func record() -> UInt64 {
+        lock.lock()
+        defer { lock.unlock() }
+        value &+= 1
+        return value
+    }
 }
 
 final class CoreAudioDeviceBackend: AudioDeviceBackend {
     private static let systemObject = AudioObjectID(kAudioObjectSystemObject)
     private let listenerQueue = DispatchQueue(label: "com.mikeli.duobar.audio-device-switcher")
+    private let notificationSequence = AudioDeviceNotificationSequence()
+
+    func notificationBoundary() -> UInt64 {
+        listenerQueue.sync { notificationSequence.current }
+    }
 
     func devices() -> [AudioDeviceDescriptor] {
         readDeviceIDs().compactMap(describe)
@@ -99,18 +123,20 @@ final class CoreAudioDeviceBackend: AudioDeviceBackend {
         return AudioObjectSetPropertyData(deviceID, &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &value)
     }
 
-    func observeSystem(_ property: AudioDeviceSystemProperty, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation? {
+    func observeSystem(_ property: AudioDeviceSystemProperty, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation? {
         observe(objectID: Self.systemObject, address: globalAddress(property.selector), handler: handler)
     }
 
-    func observeInputVolume(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation? {
+    func observeInputVolume(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation? {
         observe(objectID: deviceID, address: inputVolumeAddress(channel: channel), handler: handler)
     }
 
-    private func observe(objectID: AudioObjectID, address: AudioObjectPropertyAddress, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation? {
+    private func observe(objectID: AudioObjectID, address: AudioObjectPropertyAddress, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation? {
         let queue = listenerQueue
+        let notificationSequence = notificationSequence
         let block: AudioObjectPropertyListenerBlock = { _, _ in
-            DispatchQueue.main.async { handler() }
+            let sequence = notificationSequence.record()
+            DispatchQueue.main.async { handler(sequence) }
         }
         var address = address
         guard AudioObjectAddPropertyListenerBlock(objectID, &address, queue, block) == noErr else { return nil }

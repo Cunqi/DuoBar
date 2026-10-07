@@ -178,6 +178,83 @@ struct AudioDeviceSwitcherRegressionTests {
         switcher.stop()
     }
 
+    @Test("同一绑定已排队的旧通知不能确认后续未应用的请求", arguments: [false, true])
+    func queuedPriorNotificationCannotConfirmNewRequest(deliverDuringWrite: Bool) {
+        let backend = FakeAudioDeviceBackend()
+        backend.appliesInputWrites = false
+        let switcher = AudioDeviceSwitcher(backend: backend)
+        switcher.start()
+        switcher.setInputVolume(0.4)
+        backend.inputVolumes[backend.inputA.id] = [1: 0.4, 2: 0.4]
+        backend.enqueue(.input(backend.inputA.id, 1))
+        backend.deliversQueuedNotificationsDuringInputWrites = deliverDuringWrite
+
+        switcher.setInputVolume(0.8)
+        backend.deliverQueuedNotifications()
+
+        #expect(abs((switcher.inputVolume ?? -1) - 0.4) < 0.0001)
+        #expect(switcher.inputVolumeFeedback == .inputVolumeUnconfirmed)
+        backend.inputVolumes[backend.inputA.id] = [1: 0.78, 2: 0.78]
+        backend.emit(.input(backend.inputA.id, 2))
+        #expect(abs((switcher.inputVolume ?? -1) - 0.78) < 0.0001)
+        #expect(switcher.inputVolumeFeedback == nil)
+        switcher.stop()
+    }
+
+    @Test("实际值未变化的通知仍保留不同目标请求的未确认状态")
+    func unchangedActualValueDoesNotConfirmDifferentRequest() {
+        let backend = FakeAudioDeviceBackend()
+        backend.appliesInputWrites = false
+        let switcher = AudioDeviceSwitcher(backend: backend)
+        switcher.start()
+        switcher.setInputVolume(0.8)
+
+        backend.emit(.input(backend.inputA.id, 1))
+
+        #expect(abs((switcher.inputVolume ?? -1) - 0.2) < 0.0001)
+        #expect(switcher.inputVolumeFeedback == .inputVolumeUnconfirmed)
+        switcher.stop()
+    }
+
+    @Test("停止期间完成的量化请求在重启观察后无需新通知也不残留旧提示")
+    func restartedObservationDoesNotKeepAnEndedRequest() {
+        let backend = FakeAudioDeviceBackend()
+        backend.appliesInputWrites = false
+        let switcher = AudioDeviceSwitcher(backend: backend)
+        switcher.start()
+        switcher.setInputVolume(0.83)
+        #expect(switcher.inputVolumeFeedback == .inputVolumeUnconfirmed)
+
+        switcher.stop()
+        backend.inputVolumes[backend.inputA.id] = [1: 0.8, 2: 0.8]
+        switcher.start()
+
+        #expect(abs((switcher.inputVolume ?? -1) - 0.8) < 0.0001)
+        #expect(switcher.inputVolumeFeedback == nil)
+        switcher.stop()
+    }
+
+    @Test("停止监听明确结束该会话的设备和增益请求反馈")
+    func stoppingObservationEndsAllControlFeedback() {
+        let backend = FakeAudioDeviceBackend()
+        backend.appliesInputWrites = false
+        let switcher = AudioDeviceSwitcher(backend: backend)
+        switcher.start()
+        switcher.setDefault(backend.outputB, direction: .output)
+        switcher.setDefault(backend.inputB, direction: .input)
+        switcher.setInputVolume(0.8)
+        #expect(switcher.outputSwitchFeedback == .switchUnconfirmed)
+        #expect(switcher.inputSwitchFeedback == .switchUnconfirmed)
+        #expect(switcher.inputVolumeFeedback == .inputVolumeUnconfirmed)
+
+        switcher.stop()
+
+        #expect(switcher.outputSwitchFeedback == nil)
+        #expect(switcher.inputSwitchFeedback == nil)
+        #expect(switcher.inputVolumeFeedback == nil)
+        #expect(backend.activeTargets.isEmpty)
+    }
+
     @Test("重复启动不重复绑定并观察全部输入音量声道")
     func repeatedStartDoesNotDuplicateAllChannelBindings() {
         let backend = FakeAudioDeviceBackend()
@@ -272,11 +349,18 @@ private final class FakeAudioDeviceBackend: AudioDeviceBackend {
     var inputWriteStatuses: [AudioObjectPropertyElement: OSStatus] = [:]
     var appliesInputWrites = true
     var notifiesDuringInputWrites = false
+    var deliversQueuedNotificationsDuringInputWrites = false
     var failsInputReads = false
     var inputVolumes: [AudioDeviceID: [AudioObjectPropertyElement: Float32]] = [10: [1: 0.2, 2: 0.2], 11: [0: 0.3]]
     private(set) var inputWriteChannels: [AudioObjectPropertyElement] = []
     private(set) var deviceReadCount = 0
-    private var observations: [UUID: (AudioObservationTarget, @MainActor () -> Void)] = [:]
+    private var observations: [UUID: (AudioObservationTarget, @MainActor (UInt64) -> Void)] = [:]
+    private var queuedNotifications: [@MainActor () -> Void] = []
+    private var notificationSequence: UInt64 = 0
+
+    func notificationBoundary() -> UInt64 {
+        notificationSequence
+    }
 
     var activeTargets: [AudioObservationTarget] {
         observations.values.map(\.0).sorted { String(describing: $0) < String(describing: $1) }
@@ -323,27 +407,51 @@ private final class FakeAudioDeviceBackend: AudioDeviceBackend {
         if notifiesDuringInputWrites {
             MainActor.assumeIsolated { emit(.input(deviceID, channel)) }
         }
+        if deliversQueuedNotificationsDuringInputWrites {
+            MainActor.assumeIsolated { deliverQueuedNotifications() }
+        }
         return result
     }
 
-    func observeSystem(_ property: AudioDeviceSystemProperty, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation? {
+    func observeSystem(_ property: AudioDeviceSystemProperty, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation? {
         observe(.system(property), handler: handler)
     }
 
-    func observeInputVolume(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation? {
+    func observeInputVolume(deviceID: AudioDeviceID, channel: AudioObjectPropertyElement, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation? {
         observe(.input(deviceID, channel), handler: handler)
     }
 
     @MainActor
     func emit(_ target: AudioObservationTarget) {
-        for callback in observations.values.filter({ $0.0 == target }).map(\.1) { callback() }
+        notificationSequence &+= 1
+        let sequence = notificationSequence
+        for callback in observations.values.filter({ $0.0 == target }).map(\.1) { callback(sequence) }
+    }
+
+    func enqueue(_ target: AudioObservationTarget) {
+        notificationSequence &+= 1
+        let sequence = notificationSequence
+        for callback in observations.values.filter({ $0.0 == target }).map(\.1) {
+            let delivery: @MainActor () -> Void = { callback(sequence) }
+            queuedNotifications.append(delivery)
+        }
+    }
+
+    @MainActor
+    func deliverQueuedNotifications() {
+        let callbacks = queuedNotifications
+        queuedNotifications.removeAll()
+        for callback in callbacks { callback() }
     }
 
     func handler(for target: AudioObservationTarget) -> (@MainActor () -> Void)? {
-        observations.values.first(where: { $0.0 == target })?.1
+        guard let callback = observations.values.first(where: { $0.0 == target })?.1 else { return nil }
+        notificationSequence &+= 1
+        let sequence = notificationSequence
+        return { callback(sequence) }
     }
 
-    private func observe(_ target: AudioObservationTarget, handler: @escaping @MainActor () -> Void) -> AudioDeviceObservation {
+    private func observe(_ target: AudioObservationTarget, handler: @escaping @MainActor (UInt64) -> Void) -> AudioDeviceObservation {
         let id = UUID()
         observations[id] = (target, handler)
         return AudioDeviceObservation { [weak self] in self?.observations.removeValue(forKey: id) }

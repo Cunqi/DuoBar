@@ -40,6 +40,8 @@ final class AudioDeviceSwitcher: ObservableObject {
         let channels: Set<AudioObjectPropertyElement>
         let value: Float32
         let writeFailed: Bool
+        let notificationBoundary: UInt64
+        let previousValues: [AudioObjectPropertyElement: Float32]
     }
 
     private let backend: any AudioDeviceBackend
@@ -52,7 +54,7 @@ final class AudioDeviceSwitcher: ObservableObject {
     private var isStarted = false
     private var prefersInputVolumeFeedback = false
     private var inputVolumeWriteIsInProgress = false
-    private var inputVolumeChangedDuringWrite = false
+    private var inputVolumeNotificationDuringWrite: UInt64?
 
     init(backend: any AudioDeviceBackend = CoreAudioDeviceBackend()) {
         self.backend = backend
@@ -70,12 +72,11 @@ final class AudioDeviceSwitcher: ObservableObject {
         isStarted = true
         for property in AudioDeviceSystemProperty.allCases where systemObservations[property] == nil {
             let bindingID = UUID()
-            if let observation = backend.observeSystem(property, handler: { [weak self] in
+            if let observation = backend.observeSystem(property, handler: { [weak self] _ in
                 guard let self, self.isStarted, self.systemObservations[property]?.id == bindingID else { return }
                 self.refresh(
                     confirmOutput: property == .defaultOutput,
-                    confirmInput: property == .defaultInput,
-                    confirmVolume: false
+                    confirmInput: property == .defaultInput
                 )
             }) {
                 systemObservations[property] = ObservationBinding(id: bindingID, observation: observation)
@@ -86,6 +87,14 @@ final class AudioDeviceSwitcher: ObservableObject {
 
     func stop() {
         isStarted = false
+        requestedOutputDeviceID = nil
+        requestedInputDeviceID = nil
+        inputVolumeRequest = nil
+        outputSwitchFeedback = nil
+        inputSwitchFeedback = nil
+        inputVolumeFeedback = nil
+        inputVolumeWriteIsInProgress = false
+        inputVolumeNotificationDuringWrite = nil
         for binding in systemObservations.values {
             binding.observation.cancel()
         }
@@ -137,10 +146,16 @@ final class AudioDeviceSwitcher: ObservableObject {
 
         let scalar = Float32(min(max(level, 0), 1))
         bindInputObservations(deviceID: deviceID, channels: Set(channels))
-        inputVolumeRequest = InputVolumeRequest(deviceID: deviceID, channels: Set(channels), value: scalar, writeFailed: false)
+        let notificationBoundary = backend.notificationBoundary()
+        let previousValues = Dictionary(uniqueKeysWithValues: channels.compactMap { channel -> (AudioObjectPropertyElement, Float32)? in
+            guard let value = backend.inputVolume(deviceID: deviceID, channel: channel),
+                  value.isFinite, (0...1).contains(value) else { return nil }
+            return (channel, value)
+        })
+        inputVolumeRequest = InputVolumeRequest(deviceID: deviceID, channels: Set(channels), value: scalar, writeFailed: false, notificationBoundary: notificationBoundary, previousValues: previousValues)
         inputVolumeFeedback = .inputVolumeUnconfirmed
         inputVolumeWriteIsInProgress = true
-        inputVolumeChangedDuringWrite = false
+        inputVolumeNotificationDuringWrite = nil
         var writeFailed = false
         for channel in channels {
             if backend.setInputVolume(scalar, deviceID: deviceID, channel: channel) != noErr {
@@ -148,12 +163,12 @@ final class AudioDeviceSwitcher: ObservableObject {
             }
         }
         inputVolumeWriteIsInProgress = false
-        inputVolumeRequest = InputVolumeRequest(deviceID: deviceID, channels: Set(channels), value: scalar, writeFailed: writeFailed)
+        inputVolumeRequest = InputVolumeRequest(deviceID: deviceID, channels: Set(channels), value: scalar, writeFailed: writeFailed, notificationBoundary: notificationBoundary, previousValues: previousValues)
         inputVolumeFeedback = writeFailed ? .inputVolumeFailed : .inputVolumeUnconfirmed
-        refresh(confirmVolume: inputVolumeChangedDuringWrite)
+        refresh(volumeNotification: inputVolumeNotificationDuringWrite)
     }
 
-    private func refresh(confirmOutput: Bool = false, confirmInput: Bool = false, confirmVolume: Bool = false) {
+    private func refresh(confirmOutput: Bool = false, confirmInput: Bool = false, volumeNotification: UInt64? = nil) {
         let descriptors = backend.devices()
         let outputDeviceID = backend.defaultDevice(direction: .output)
         let inputDeviceID = backend.defaultDevice(direction: .input)
@@ -167,10 +182,10 @@ final class AudioDeviceSwitcher: ObservableObject {
             self.requestedInputDeviceID = nil
             inputSwitchFeedback = nil
         }
-        refreshInputVolume(deviceID: inputDeviceID, confirmRequest: confirmVolume)
+        refreshInputVolume(deviceID: inputDeviceID, notificationSequence: volumeNotification)
     }
 
-    private func refreshInputVolume(deviceID: AudioDeviceID?, confirmRequest: Bool) {
+    private func refreshInputVolume(deviceID: AudioDeviceID?, notificationSequence: UInt64?) {
         guard let deviceID else {
             removeInputObservations()
             inputVolume = nil
@@ -194,7 +209,7 @@ final class AudioDeviceSwitcher: ObservableObject {
         isInputVolumeSettable = !channels.isEmpty && channels.allSatisfy { backend.inputVolumeIsSettable(deviceID: deviceID, channel: $0) }
 
         guard let request = inputVolumeRequest else {
-            if confirmRequest, readBackIsComplete, isInputVolumeSettable, inputVolumeFeedback == .inputVolumeUnavailable {
+            if notificationSequence != nil, readBackIsComplete, isInputVolumeSettable, inputVolumeFeedback == .inputVolumeUnavailable {
                 inputVolumeFeedback = nil
             }
             return
@@ -208,7 +223,10 @@ final class AudioDeviceSwitcher: ObservableObject {
             guard let value = valuesByChannel[channel] else { return false }
             return abs(value - request.value) <= 0.005
         }
-        if confirmRequest, requestedChannelsArePresent, !request.writeFailed || recoveredFromFailedWrite {
+        let actualValuesChanged = request.channels.contains { channel in valuesByChannel[channel] != request.previousValues[channel] }
+        let notificationIsAfterRequest = notificationSequence.map { $0 > request.notificationBoundary } ?? false
+        if notificationIsAfterRequest, requestedChannelsArePresent,
+           (request.writeFailed ? recoveredFromFailedWrite : actualValuesChanged) {
             inputVolumeRequest = nil
             inputVolumeFeedback = nil
         } else {
@@ -227,14 +245,16 @@ final class AudioDeviceSwitcher: ObservableObject {
         }
         for channel in channels.sorted() where inputObservations[channel] == nil {
             let bindingID = UUID()
-            if let observation = backend.observeInputVolume(deviceID: deviceID, channel: channel, handler: { [weak self] in
+            if let observation = backend.observeInputVolume(deviceID: deviceID, channel: channel, handler: { [weak self] sequence in
                 guard let self, self.isStarted, self.observedInputDeviceID == deviceID,
                       self.inputObservations[channel]?.id == bindingID else { return }
                 if self.inputVolumeWriteIsInProgress {
-                    self.inputVolumeChangedDuringWrite = true
+                    if let request = self.inputVolumeRequest, sequence > request.notificationBoundary {
+                        self.inputVolumeNotificationDuringWrite = max(self.inputVolumeNotificationDuringWrite ?? 0, sequence)
+                    }
                     self.refresh()
                 } else {
-                    self.refresh(confirmVolume: true)
+                    self.refresh(volumeNotification: sequence)
                 }
             }) {
                 inputObservations[channel] = ObservationBinding(id: bindingID, observation: observation)
