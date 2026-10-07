@@ -216,6 +216,22 @@ struct AudioDeviceSwitcherRegressionTests {
         switcher.stop()
     }
 
+    @Test("完整实际读回已等于请求值时新通知可确认等值写入")
+    func equivalentInputVolumeRequestConfirmsWithoutValueChange() {
+        let backend = FakeAudioDeviceBackend()
+        let switcher = AudioDeviceSwitcher(backend: backend)
+        switcher.start()
+        #expect(abs((switcher.inputVolume ?? -1) - 0.2) < 0.0001)
+
+        switcher.setInputVolume(0.2)
+        #expect(switcher.inputVolumeFeedback == .inputVolumeUnconfirmed)
+        backend.emit(.input(backend.inputA.id, 1))
+
+        #expect(abs((switcher.inputVolume ?? -1) - 0.2) < 0.0001)
+        #expect(switcher.inputVolumeFeedback == nil)
+        switcher.stop()
+    }
+
     @Test("停止期间完成的量化请求在重启观察后无需新通知也不残留旧提示")
     func restartedObservationDoesNotKeepAnEndedRequest() {
         let backend = FakeAudioDeviceBackend()

@@ -224,9 +224,10 @@ final class AudioDeviceSwitcher: ObservableObject {
             return abs(value - request.value) <= 0.005
         }
         let actualValuesChanged = request.channels.contains { channel in valuesByChannel[channel] != request.previousValues[channel] }
+        let actualValuesMatchRequest = request.channels.allSatisfy { channel in valuesByChannel[channel] == request.value }
         let notificationIsAfterRequest = notificationSequence.map { $0 > request.notificationBoundary } ?? false
         if notificationIsAfterRequest, requestedChannelsArePresent,
-           (request.writeFailed ? recoveredFromFailedWrite : actualValuesChanged) {
+           (request.writeFailed ? recoveredFromFailedWrite : (actualValuesChanged || actualValuesMatchRequest)) {
             inputVolumeRequest = nil
             inputVolumeFeedback = nil
         } else {
