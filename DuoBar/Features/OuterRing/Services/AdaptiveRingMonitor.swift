@@ -12,7 +12,7 @@ final class AdaptiveRingMonitor: ObservableObject {
     @Published private(set) var brightnessSnapshot: DisplayBrightnessSnapshot?
     @Published private(set) var state: AdaptiveRingState = .neutral
 
-    private let performanceSampler: PerformanceTelemetrySampler
+    private let performanceSampler: any PerformanceTelemetrySampling
     private let brightnessReader: any DisplayBrightnessReading
     private var performanceEngine: PerformanceDecisionEngine
     private let coordinator: AdaptiveRingCoordinator
@@ -36,7 +36,7 @@ final class AdaptiveRingMonitor: ObservableObject {
     var isMonitoring: Bool { timer != nil }
 
     init(
-        performanceSampler: PerformanceTelemetrySampler = PerformanceTelemetrySampler(),
+        performanceSampler: any PerformanceTelemetrySampling = PerformanceTelemetrySampler(),
         performanceEngine: PerformanceDecisionEngine = PerformanceDecisionEngine(),
         brightnessReader: any DisplayBrightnessReading = DisplayBrightnessService(),
         coordinator: AdaptiveRingCoordinator = AdaptiveRingCoordinator()
@@ -130,7 +130,7 @@ final class AdaptiveRingMonitor: ObservableObject {
         debugCandidates = performanceEngine.candidates(for: nextPerformance)
         debugCandidateDurations = Dictionary(uniqueKeysWithValues: debugCandidates.map { ($0.metric, performanceEngine.candidateDuration(for: $0.metric, at: timestamp)) })
         #endif
-        publishBrightnessIfMeaningfullyChanged(nextBrightness)
+        publishBrightness(nextBrightness)
 
         let nextState = coordinator.resolve(
             brightness: nextBrightness,
@@ -257,24 +257,30 @@ final class AdaptiveRingMonitor: ObservableObject {
         refresh()
     }
 
-    private func publishBrightnessIfMeaningfullyChanged(_ next: DisplayBrightnessSnapshot) {
-        guard let current = brightnessSnapshot else {
-            brightnessSnapshot = next
-            return
-        }
-        guard current.mainDisplay == next.mainDisplay else {
-            brightnessSnapshot = next
-            return
+    private func publishBrightness(_ next: DisplayBrightnessSnapshot) {
+        var availability = next.availability
+        if let current = brightnessSnapshot,
+           current.mainDisplay == next.mainDisplay,
+           case let .available(old) = current.availability,
+           case let .available(new) = next.availability,
+           abs(old - new) < 0.01 {
+            availability = current.availability
         }
 
-        switch (current.availability, next.availability) {
-        case (.unavailable, .unavailable):
-            break
-        case (.available(let old), .available(let new)) where abs(old - new) < 0.01:
-            break
-        default:
-            brightnessSnapshot = next
-        }
+        #if DEBUG
+        brightnessSnapshot = DisplayBrightnessSnapshot(
+            mainDisplay: next.mainDisplay,
+            availability: availability,
+            sampledAt: next.sampledAt,
+            diagnostic: next.diagnostic
+        )
+        #else
+        brightnessSnapshot = DisplayBrightnessSnapshot(
+            mainDisplay: next.mainDisplay,
+            availability: availability,
+            sampledAt: next.sampledAt
+        )
+        #endif
     }
 
     deinit {
@@ -304,7 +310,12 @@ private func adaptiveRingDisplayConfigurationChanged(
 }
 
 extension AdaptiveRingMonitor {
-    func ringInputs(hasBattery: Bool, allowsPressureOverride: Bool, volume: OutputVolumeStatus) -> RingContentInputs {
+    func ringInputs(
+        hasBattery: Bool,
+        allowsPressureOverride: Bool,
+        volume: OutputVolumeStatus,
+        at timestamp: TimeInterval = ProcessInfo.processInfo.systemUptime
+    ) -> RingContentInputs {
         RingContentInputs(
             hasBattery: hasBattery,
             allowsPressureOverride: allowsPressureOverride,
@@ -312,7 +323,7 @@ extension AdaptiveRingMonitor {
             performanceSnapshot: performanceSnapshot,
             brightnessSnapshot: brightnessSnapshot,
             volume: volume,
-            timestamp: ProcessInfo.processInfo.systemUptime
+            timestamp: timestamp
         )
     }
 }

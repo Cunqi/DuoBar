@@ -11,7 +11,7 @@ struct AudioInputSection: View {
                 PopoverCardHeader(
                     symbol: symbol,
                     title: localized("Audio Input"),
-                    detail: switcher.defaultInput?.name ?? localized("No input device")
+                    detail: switcher.inputFeedback?.message ?? switcher.defaultInput?.name ?? localized("No input device")
                 )
                 if switcher.isInputVolumeSettable, let volume = switcher.inputVolume {
                     Slider(value: Binding(get: { volume }, set: switcher.setInputVolume), in: 0...1)

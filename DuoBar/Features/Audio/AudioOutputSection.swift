@@ -10,7 +10,7 @@ struct AudioOutputSection: View {
 
     var body: some View {
         PopoverCard(canExpand: switcher.outputs.count > 1) {
-            PopoverCardHeader(symbol: symbol, title: localized("Audio Output"), detail: detail, stateText: stateText)
+            PopoverCardHeader(symbol: symbol, title: localized("Audio Output"), detail: switcher.outputSwitchFeedback?.message ?? detail, stateText: stateText)
         } expanded: {
             AudioDeviceList(options: switcher.outputs.map { AudioDeviceListOption(id: $0.id, name: $0.name, isDefault: $0.isDefault) }) { selected in
                 guard let option = switcher.outputs.first(where: { $0.id == selected.id }) else { return }

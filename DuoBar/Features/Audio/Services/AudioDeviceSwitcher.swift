@@ -1,6 +1,24 @@
-import DuoBarCore
 import CoreAudio
+import DuoBarCore
 import Foundation
+
+enum AudioDeviceControlFeedback: Equatable {
+    case switchFailed
+    case switchUnconfirmed
+    case inputVolumeFailed
+    case inputVolumeUnconfirmed
+    case inputVolumeUnavailable
+
+    var message: String {
+        switch self {
+        case .switchFailed: localized("Device change failed")
+        case .switchUnconfirmed: localized("Device change not confirmed")
+        case .inputVolumeFailed: localized("Input volume change failed")
+        case .inputVolumeUnconfirmed: localized("Input volume not confirmed")
+        case .inputVolumeUnavailable: localized("Input volume unavailable")
+        }
+    }
+}
 
 @MainActor
 final class AudioDeviceSwitcher: ObservableObject {
@@ -8,148 +26,236 @@ final class AudioDeviceSwitcher: ObservableObject {
     @Published private(set) var inputs: [AudioDeviceOption] = []
     @Published private(set) var inputVolume: Double?
     @Published private(set) var isInputVolumeSettable = false
+    @Published private(set) var outputSwitchFeedback: AudioDeviceControlFeedback?
+    @Published private(set) var inputSwitchFeedback: AudioDeviceControlFeedback?
+    @Published private(set) var inputVolumeFeedback: AudioDeviceControlFeedback?
 
-    private static let systemObject = AudioObjectID(kAudioObjectSystemObject)
-    private let listenerQueue = DispatchQueue(label: "com.mikeli.duobar.audio-device-switcher")
-    private var listeners: [(AudioObjectID, AudioObjectPropertyAddress, AudioObjectPropertyListenerBlock)] = []
-    private var inputVolumeListenerDevice: AudioDeviceID?
+    private struct ObservationBinding {
+        let id: UUID
+        let observation: AudioDeviceObservation
+    }
+
+    private struct InputVolumeRequest {
+        let deviceID: AudioDeviceID
+        let channels: Set<AudioObjectPropertyElement>
+        let value: Float32
+        let writeFailed: Bool
+    }
+
+    private let backend: any AudioDeviceBackend
+    private var systemObservations: [AudioDeviceSystemProperty: ObservationBinding] = [:]
+    private var inputObservations: [AudioObjectPropertyElement: ObservationBinding] = [:]
+    private var observedInputDeviceID: AudioDeviceID?
+    private var requestedOutputDeviceID: AudioDeviceID?
+    private var requestedInputDeviceID: AudioDeviceID?
+    private var inputVolumeRequest: InputVolumeRequest?
+    private var isStarted = false
+    private var prefersInputVolumeFeedback = false
+    private var inputVolumeWriteIsInProgress = false
+    private var inputVolumeChangedDuringWrite = false
+
+    init(backend: any AudioDeviceBackend = CoreAudioDeviceBackend()) {
+        self.backend = backend
+    }
 
     var defaultInput: AudioDeviceOption? {
         inputs.first(where: \.isDefault)
     }
 
+    var inputFeedback: AudioDeviceControlFeedback? {
+        prefersInputVolumeFeedback ? inputVolumeFeedback ?? inputSwitchFeedback : inputSwitchFeedback ?? inputVolumeFeedback
+    }
+
     func start() {
-        guard listeners.isEmpty else {
-            refresh()
-            return
+        isStarted = true
+        for property in AudioDeviceSystemProperty.allCases where systemObservations[property] == nil {
+            let bindingID = UUID()
+            if let observation = backend.observeSystem(property, handler: { [weak self] in
+                guard let self, self.isStarted, self.systemObservations[property]?.id == bindingID else { return }
+                self.refresh(
+                    confirmOutput: property == .defaultOutput,
+                    confirmInput: property == .defaultInput,
+                    confirmVolume: false
+                )
+            }) {
+                systemObservations[property] = ObservationBinding(id: bindingID, observation: observation)
+            }
         }
-        for selector in [kAudioHardwarePropertyDevices, kAudioHardwarePropertyDefaultOutputDevice, kAudioHardwarePropertyDefaultInputDevice] {
-            addListener(objectID: Self.systemObject, address: Self.globalAddress(selector))
-        }
-        refresh()
+        refresh(confirmOutput: true, confirmInput: true)
     }
 
     func stop() {
-        for (objectID, address, block) in listeners {
-            var address = address
-            AudioObjectRemovePropertyListenerBlock(objectID, &address, listenerQueue, block)
+        isStarted = false
+        for binding in systemObservations.values {
+            binding.observation.cancel()
         }
-        listeners.removeAll()
-        inputVolumeListenerDevice = nil
+        systemObservations.removeAll()
+        removeInputObservations()
     }
 
     func setDefault(_ option: AudioDeviceOption, direction: AudioDeviceDirection) {
-        var address = Self.globalAddress(direction == .output ? kAudioHardwarePropertyDefaultOutputDevice : kAudioHardwarePropertyDefaultInputDevice)
-        var deviceID = option.id
-        AudioObjectSetPropertyData(Self.systemObject, &address, 0, nil, UInt32(MemoryLayout<AudioDeviceID>.size), &deviceID)
+        let alreadySelected = backend.defaultDevice(direction: direction) == option.id
+        if direction == .output {
+            requestedOutputDeviceID = alreadySelected ? nil : option.id
+            outputSwitchFeedback = nil
+        } else {
+            prefersInputVolumeFeedback = false
+            requestedInputDeviceID = alreadySelected ? nil : option.id
+            inputSwitchFeedback = nil
+        }
+        guard !alreadySelected else {
+            refresh()
+            return
+        }
+
+        let result = backend.setDefaultDevice(option.id, direction: direction)
+        let feedback: AudioDeviceControlFeedback = result == noErr ? .switchUnconfirmed : .switchFailed
+        if direction == .output {
+            outputSwitchFeedback = feedback
+        } else {
+            inputSwitchFeedback = feedback
+        }
         refresh()
     }
 
     func setInputVolume(_ level: Double) {
-        guard let deviceID = defaultInput?.id else { return }
-        var scalar = Float32(min(max(level, 0), 1))
-        for var address in Self.inputVolumeAddresses(deviceID: deviceID) {
-            AudioObjectSetPropertyData(deviceID, &address, 0, nil, UInt32(MemoryLayout<Float32>.size), &scalar)
-        }
-        inputVolume = Double(scalar)
-    }
-
-    private func refresh() {
-        let descriptors = Self.readDeviceIDs().compactMap(Self.describe)
-        outputs = AudioDeviceOption.options(from: descriptors, direction: .output, defaultID: Self.readDefault(kAudioHardwarePropertyDefaultOutputDevice))
-        inputs = AudioDeviceOption.options(from: descriptors, direction: .input, defaultID: Self.readDefault(kAudioHardwarePropertyDefaultInputDevice))
-        refreshInputVolume()
-    }
-
-    private func refreshInputVolume() {
-        guard let deviceID = defaultInput?.id else {
-            inputVolume = nil
-            isInputVolumeSettable = false
+        prefersInputVolumeFeedback = true
+        guard let deviceID = backend.defaultDevice(direction: .input) else {
+            inputVolumeRequest = nil
+            inputVolumeFeedback = .inputVolumeUnavailable
+            refresh()
             return
         }
-        let addresses = Self.inputVolumeAddresses(deviceID: deviceID)
-        let values = addresses.compactMap { address -> Float32? in
-            var address = address
-            var value: Float32 = 0
-            var size = UInt32(MemoryLayout<Float32>.size)
-            return AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &value) == noErr ? value : nil
+        let channels = Array(Set(backend.inputVolumeChannels(deviceID: deviceID))).sorted()
+        guard level.isFinite, !channels.isEmpty,
+              channels.allSatisfy({ backend.inputVolumeIsSettable(deviceID: deviceID, channel: $0) }) else {
+            inputVolumeRequest = nil
+            inputVolumeFeedback = .inputVolumeUnavailable
+            refresh()
+            return
         }
-        inputVolume = values.isEmpty ? nil : Double(values.reduce(0, +) / Float32(values.count))
-        isInputVolumeSettable = !addresses.isEmpty && addresses.allSatisfy { address in
-            var address = address
-            var settable = DarwinBoolean(false)
-            return AudioObjectIsPropertySettable(deviceID, &address, &settable) == noErr && settable.boolValue
-        }
-        if inputVolumeListenerDevice != deviceID, let address = addresses.first {
-            inputVolumeListenerDevice = deviceID
-            addListener(objectID: deviceID, address: address)
-        }
-    }
 
-    private func addListener(objectID: AudioObjectID, address: AudioObjectPropertyAddress) {
-        let block: AudioObjectPropertyListenerBlock = { [weak self] _, _ in
-            DispatchQueue.main.async {
-                self?.refresh()
+        let scalar = Float32(min(max(level, 0), 1))
+        bindInputObservations(deviceID: deviceID, channels: Set(channels))
+        inputVolumeRequest = InputVolumeRequest(deviceID: deviceID, channels: Set(channels), value: scalar, writeFailed: false)
+        inputVolumeFeedback = .inputVolumeUnconfirmed
+        inputVolumeWriteIsInProgress = true
+        inputVolumeChangedDuringWrite = false
+        var writeFailed = false
+        for channel in channels {
+            if backend.setInputVolume(scalar, deviceID: deviceID, channel: channel) != noErr {
+                writeFailed = true
             }
         }
-        var address = address
-        guard AudioObjectAddPropertyListenerBlock(objectID, &address, listenerQueue, block) == noErr else { return }
-        listeners.append((objectID, address, block))
+        inputVolumeWriteIsInProgress = false
+        inputVolumeRequest = InputVolumeRequest(deviceID: deviceID, channels: Set(channels), value: scalar, writeFailed: writeFailed)
+        inputVolumeFeedback = writeFailed ? .inputVolumeFailed : .inputVolumeUnconfirmed
+        refresh(confirmVolume: inputVolumeChangedDuringWrite)
     }
 
-    private static func globalAddress(_ selector: AudioObjectPropertySelector) -> AudioObjectPropertyAddress {
-        AudioObjectPropertyAddress(mSelector: selector, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
-    }
-
-    private static func readDefault(_ selector: AudioObjectPropertySelector) -> AudioDeviceID? {
-        var address = globalAddress(selector)
-        var deviceID = AudioDeviceID(kAudioObjectUnknown)
-        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(systemObject, &address, 0, nil, &size, &deviceID) == noErr,
-              deviceID != kAudioObjectUnknown
-        else { return nil }
-        return deviceID
-    }
-
-    private static func readDeviceIDs() -> [AudioDeviceID] {
-        var address = globalAddress(kAudioHardwarePropertyDevices)
-        var size: UInt32 = 0
-        guard AudioObjectGetPropertyDataSize(systemObject, &address, 0, nil, &size) == noErr, size > 0 else { return [] }
-        var ids = [AudioDeviceID](repeating: kAudioObjectUnknown, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
-        guard AudioObjectGetPropertyData(systemObject, &address, 0, nil, &size, &ids) == noErr else { return [] }
-        return ids
-    }
-
-    private static func describe(_ deviceID: AudioDeviceID) -> AudioDeviceDescriptor? {
-        var address = globalAddress(kAudioObjectPropertyName)
-        var name: Unmanaged<CFString>?
-        var size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &size, &name) == noErr,
-              let name = name?.takeRetainedValue() as String?
-        else { return nil }
-        return AudioDeviceDescriptor(
-            id: deviceID,
-            name: name,
-            hasOutput: hasStreams(deviceID, scope: kAudioDevicePropertyScopeOutput),
-            hasInput: hasStreams(deviceID, scope: kAudioDevicePropertyScopeInput)
-        )
-    }
-
-    private static func hasStreams(_ deviceID: AudioDeviceID, scope: AudioObjectPropertyScope) -> Bool {
-        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams, mScope: scope, mElement: kAudioObjectPropertyElementMain)
-        var size: UInt32 = 0
-        return AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &size) == noErr && size > 0
-    }
-
-    private static func inputVolumeAddresses(deviceID: AudioDeviceID) -> [AudioObjectPropertyAddress] {
-        let main = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
-        var probe = main
-        if AudioObjectHasProperty(deviceID, &probe) {
-            return [main]
+    private func refresh(confirmOutput: Bool = false, confirmInput: Bool = false, confirmVolume: Bool = false) {
+        let descriptors = backend.devices()
+        let outputDeviceID = backend.defaultDevice(direction: .output)
+        let inputDeviceID = backend.defaultDevice(direction: .input)
+        outputs = AudioDeviceOption.options(from: descriptors, direction: .output, defaultID: outputDeviceID)
+        inputs = AudioDeviceOption.options(from: descriptors, direction: .input, defaultID: inputDeviceID)
+        if confirmOutput, let requestedOutputDeviceID, outputDeviceID == requestedOutputDeviceID {
+            self.requestedOutputDeviceID = nil
+            outputSwitchFeedback = nil
         }
-        return [AudioObjectPropertyElement(1), AudioObjectPropertyElement(2)].compactMap { channel in
-            var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar, mScope: kAudioDevicePropertyScopeInput, mElement: channel)
-            return AudioObjectHasProperty(deviceID, &address) ? address : nil
+        if confirmInput, let requestedInputDeviceID, inputDeviceID == requestedInputDeviceID {
+            self.requestedInputDeviceID = nil
+            inputSwitchFeedback = nil
+        }
+        refreshInputVolume(deviceID: inputDeviceID, confirmRequest: confirmVolume)
+    }
+
+    private func refreshInputVolume(deviceID: AudioDeviceID?, confirmRequest: Bool) {
+        guard let deviceID else {
+            removeInputObservations()
+            inputVolume = nil
+            isInputVolumeSettable = false
+            if inputVolumeRequest != nil { inputVolumeFeedback = .inputVolumeUnavailable }
+            return
+        }
+        if let request = inputVolumeRequest, request.deviceID != deviceID {
+            inputVolumeRequest = nil
+            inputVolumeFeedback = nil
+        }
+        let channels = Array(Set(backend.inputVolumeChannels(deviceID: deviceID))).sorted()
+        bindInputObservations(deviceID: deviceID, channels: Set(channels))
+        let valuesByChannel = Dictionary(uniqueKeysWithValues: channels.compactMap { channel -> (AudioObjectPropertyElement, Float32)? in
+            guard let value = backend.inputVolume(deviceID: deviceID, channel: channel),
+                  value.isFinite, (0...1).contains(value) else { return nil }
+            return (channel, value)
+        })
+        let readBackIsComplete = !channels.isEmpty && valuesByChannel.count == channels.count
+        inputVolume = readBackIsComplete ? Double(valuesByChannel.values.reduce(0, +) / Float32(valuesByChannel.count)) : nil
+        isInputVolumeSettable = !channels.isEmpty && channels.allSatisfy { backend.inputVolumeIsSettable(deviceID: deviceID, channel: $0) }
+
+        guard let request = inputVolumeRequest else {
+            if confirmRequest, readBackIsComplete, isInputVolumeSettable, inputVolumeFeedback == .inputVolumeUnavailable {
+                inputVolumeFeedback = nil
+            }
+            return
+        }
+        guard readBackIsComplete else {
+            inputVolumeFeedback = request.writeFailed ? .inputVolumeFailed : .inputVolumeUnavailable
+            return
+        }
+        let requestedChannelsArePresent = request.channels.isSubset(of: Set(channels))
+        let recoveredFromFailedWrite = requestedChannelsArePresent && request.channels.allSatisfy { channel in
+            guard let value = valuesByChannel[channel] else { return false }
+            return abs(value - request.value) <= 0.005
+        }
+        if confirmRequest, requestedChannelsArePresent, !request.writeFailed || recoveredFromFailedWrite {
+            inputVolumeRequest = nil
+            inputVolumeFeedback = nil
+        } else {
+            inputVolumeFeedback = request.writeFailed ? .inputVolumeFailed : .inputVolumeUnconfirmed
+        }
+    }
+
+    private func bindInputObservations(deviceID: AudioDeviceID, channels: Set<AudioObjectPropertyElement>) {
+        guard isStarted else { return }
+        if observedInputDeviceID != deviceID {
+            removeInputObservations()
+            observedInputDeviceID = deviceID
+        }
+        for channel in Array(inputObservations.keys) where !channels.contains(channel) {
+            inputObservations.removeValue(forKey: channel)?.observation.cancel()
+        }
+        for channel in channels.sorted() where inputObservations[channel] == nil {
+            let bindingID = UUID()
+            if let observation = backend.observeInputVolume(deviceID: deviceID, channel: channel, handler: { [weak self] in
+                guard let self, self.isStarted, self.observedInputDeviceID == deviceID,
+                      self.inputObservations[channel]?.id == bindingID else { return }
+                if self.inputVolumeWriteIsInProgress {
+                    self.inputVolumeChangedDuringWrite = true
+                    self.refresh()
+                } else {
+                    self.refresh(confirmVolume: true)
+                }
+            }) {
+                inputObservations[channel] = ObservationBinding(id: bindingID, observation: observation)
+            }
+        }
+    }
+
+    private func removeInputObservations() {
+        observedInputDeviceID = nil
+        for binding in inputObservations.values {
+            binding.observation.cancel()
+        }
+        inputObservations.removeAll()
+    }
+
+    deinit {
+        for binding in systemObservations.values {
+            binding.observation.cancel()
+        }
+        for binding in inputObservations.values {
+            binding.observation.cancel()
         }
     }
 }

@@ -121,3 +121,8 @@
 "Input volume" = "输入音量";
 "Display and system won't sleep automatically" = "显示器和系统不会自动睡眠";
 "%@ available of %@" = "可用 %@，共 %@";
+"Device change failed" = "设备切换失败";
+"Device change not confirmed" = "切换结果尚未确认";
+"Input volume change failed" = "输入音量调整失败";
+"Input volume not confirmed" = "输入音量尚未确认";
+"Input volume unavailable" = "输入音量不可用";

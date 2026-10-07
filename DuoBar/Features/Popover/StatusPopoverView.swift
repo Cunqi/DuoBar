@@ -59,6 +59,7 @@ struct StatusPopoverView: View {
             NSApp.activate(ignoringOtherApps: true)
             audioSwitcher.start()
         }
+        .onDisappear { audioSwitcher.stop() }
     }
 
     private var popoverLayout: PopoverLayout {

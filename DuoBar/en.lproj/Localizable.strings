@@ -121,3 +121,8 @@
 "Input volume" = "Input volume";
 "Display and system won't sleep automatically" = "Display and system won't sleep automatically";
 "%@ available of %@" = "%@ available of %@";
+"Device change failed" = "Device change failed";
+"Device change not confirmed" = "Device change not confirmed";
+"Input volume change failed" = "Input volume change failed";
+"Input volume not confirmed" = "Input volume not confirmed";
+"Input volume unavailable" = "Input volume unavailable";
