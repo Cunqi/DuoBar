@@ -141,6 +141,14 @@ DuoBar 是独立项目，与 Apple Inc. 没有隶属、赞助或认可关系。
 
 普通用户不需要验证这一项。它主要用于希望确认下载文件完整性的用户。
 
+## 当前源码结构与构建
+
+当前源码在同一仓库内包含两个 Swift Package：`DuoBarCore` 保存纯逻辑与数据模型，`DuoBarKit` 保存共享 UI 组件。应用的系统服务与功能页面按模块放在 `DuoBar/Features`，由应用层组合两个包。
+
+打开 `DuoBar.xcodeproj` 并选择 `DuoBar` scheme 即可运行。命令行验证入口为 `./scripts/lint.sh`、`./scripts/acceptance-tests.sh` 和 `./scripts/build.sh`；正式配置使用 `./scripts/build.sh Release`。这些构建不修改本机签名配置，普通测试不会启用硬件控制验证。
+
+详细工程说明见 [ProjectContext.md](ProjectContext.md) 和 [架构说明](docs/ARCHITECTURE.md)。上方的 1.2.0 下载介绍属于已有发布版本，当前源码包含后续扩展。
+
 ## 开源许可
 
 DuoBar 使用 [MIT License](LICENSE) 开源。

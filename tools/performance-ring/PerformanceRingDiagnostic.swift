@@ -1,3 +1,4 @@
+import DuoBarCore
 import Foundation
 
 @main
@@ -9,7 +10,7 @@ struct PerformanceRingDiagnostic {
         Thread.sleep(forTimeInterval: 0.25)
 
         print("device.hasInternalBattery=\(context.hasInternalBattery)")
-        print("device.behavior=\(context.performanceBehavior.rawValue)")
+        print("device.behavior=\(context.ringBehavior.rawValue)")
         printSamples(label: "idle", sampler: sampler, count: 6, interval: 0.5)
 
         if CommandLine.arguments.contains("--idle-only") {

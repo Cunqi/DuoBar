@@ -1,3 +1,4 @@
+import DuoBarCore
 import AppKit
 import Combine
 
