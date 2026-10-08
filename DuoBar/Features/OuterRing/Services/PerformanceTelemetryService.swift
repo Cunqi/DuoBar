@@ -2,7 +2,11 @@ import DuoBarCore
 import Darwin.Mach
 import Foundation
 
-final class PerformanceTelemetrySampler {
+protocol PerformanceTelemetrySampling {
+    func sample(at timestamp: TimeInterval) -> PerformanceSnapshot
+}
+
+final class PerformanceTelemetrySampler: PerformanceTelemetrySampling {
     private var previousCPUTicks: CPUTicks?
     private var previousPageOuts: UInt64?
     private var previousMemoryTimestamp: TimeInterval?
